@@ -13,7 +13,20 @@ A collection of simple, single-purpose userscripts for various websites.
 
 This section lists the userscripts available in this collection.
 
-### 1. RedGIFs Video Download Button
+### 1. YouTube UI Customizer
+
+A script that enhances your YouTube experience. You can customize the video grid layout by adjusting thumbnails per row, completely hide Shorts content, and automatically redirect the Shorts player to the standard video player.
+
+#### Getting Started
+
+After installing the script, a new settings icon  will appear at the top right of the YouTube page.  
+Click this icon to open the settings panel. From there, you can easily configure all options, such as the number of thumbnails per row and the visibility of Shorts.
+
+| Platform | GitHub | Greasy Fork | Version | Last Updated | Changelog |
+| :--- | :--- | :--- | :--- | :--- | :--- |
+| **YouTube** | [![Download](https://img.shields.io/badge/Download-blue?style=flat-square&logo=download)](https://raw.githubusercontent.com/p65536/Userscripts-Collection/main/scripts/YouTube-UI-Customizer/YouTube-UI-Customizer.user.js) | [![Greasy Fork](https://img.shields.io/badge/Install-green?style=flat-square&logo=greasyfork)](https://greasyfork.org/en/scripts/546668-youtube-ui-customizer) | 1.0.0 | 2025/08/22 | [View](./scripts/YouTube-UI-Customizer/CHANGELOG.md) |
+
+### 2. RedGIFs Video Download Button
 
 A script that adds a download button to the sidebar of each video on RedGifs for one-click HD video downloads.
 
