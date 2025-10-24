@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         RedGIFs Video Download Button
 // @namespace    https://github.com/p65536
-// @version      1.0.0
+// @version      1.0.1
 // @license      MIT
 // @description  Adds a download button to the sidebar of each video on the RedGIFs site for one-click HD downloads.
 // @icon         https://www.redgifs.com/favicon.ico
@@ -22,7 +22,7 @@
     const APPID = 'rgvdb';
     const LOG_PREFIX = `[${APPID.toUpperCase()}]`;
     const CONSTANTS = {
-        SIDEBAR_SELECTOR: '.SideBar',
+        SIDEBAR_SELECTOR: '.sideBar',
         VIDEO_CONTAINER_SELECTOR: '.GifPreview',
         API_URL_BASE: 'https://api.redgifs.com/v2/gifs/',
         API_AUTH_URL: 'https://api.redgifs.com/v2/auth/temporary',
@@ -132,14 +132,14 @@
         for (const [key, value] of Object.entries(props)) {
             if (key.startsWith('on') && typeof value === 'function') {
                 el.addEventListener(key.slice(2).toLowerCase(), value);
-            } else if (value !== false && value != null) {
+            } else if (value !== false && value !== null) {
                 el.setAttribute(key, value === true ? '' : value);
             }
         }
 
         const fragment = document.createDocumentFragment();
         function append(child) {
-            if (child == null || child === false) return;
+            if (child === null || child === false) return;
             if (Array.isArray(child)) {
                 child.forEach(append);
             } else {
