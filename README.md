@@ -12,9 +12,12 @@ A collection of simple, single-purpose userscripts for various websites.
 ## Recent Updates
 
 ### 2025/10/24
+- Updated `RedGIFs Video Download Button` (v1.0.1 -> v1.1.0)  
+  > Added an "Open in New Tab" button, moved the download button for better access, and improved performance.
+
 - Updated `RedGIFs Video Download Button` (v1.0.0 -> v1.0.1)  
-    > Quick patch for site structure changes.
-    > Please bear with the visual clumsiness.
+  > Quick patch for site structure changes.
+  > Please bear with the visual clumsiness.
 
 ---
 
@@ -43,7 +46,7 @@ A script that adds a download button to the sidebar of each video on RedGifs for
 
 | Platform | GitHub | Greasy Fork | Version | Last Updated | Changelog |
 | :--- | :--- | :--- | :--- | :--- | :--- |
-| **RedGifs** | [![Download](https://img.shields.io/badge/Download-blue?style=flat-square&logo=download)](https://raw.githubusercontent.com/p65536/Userscripts-Collection/main/scripts/RedGIFs-Video-Download-Button/RedGIFs-Video-Download-Button.user.js) | [![Greasy Fork](https://img.shields.io/badge/Install-green?style=flat-square&logo=greasyfork)](https://greasyfork.org/en/scripts/545472-redgifs-video-download-button) | 1.0.1 | 2025/10/24 | [View](./scripts/RedGIFs-Video-Download-Button/CHANGELOG.md) |
+| **RedGifs** | [![Download](https://img.shields.io/badge/Download-blue?style=flat-square&logo=download)](https://raw.githubusercontent.com/p65536/Userscripts-Collection/main/scripts/RedGIFs-Video-Download-Button/RedGIFs-Video-Download-Button.user.js) | [![Greasy Fork](https://img.shields.io/badge/Install-green?style=flat-square&logo=greasyfork)](https://greasyfork.org/en/scripts/545472-redgifs-video-download-button) | 1.1.0 | 2025/10/24 | [View](./scripts/RedGIFs-Video-Download-Button/CHANGELOG.md) |
 
 ---
 
