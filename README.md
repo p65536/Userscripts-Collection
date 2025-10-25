@@ -11,6 +11,9 @@ A collection of simple, single-purpose userscripts for various websites.
 
 ## Recent Updates
 
+### 2025/10/25
+- Updated `YouTube UI Customizer` (v1.0.0 -> v1.1.0)  
+
 ### 2025/10/24
 - Updated `RedGIFs Video Download Button` (v1.0.1 -> v1.1.0)  
   > Added an "Open in New Tab" button, moved the download button for better access, and improved performance.
@@ -36,7 +39,7 @@ Click this icon to open the settings panel. From there, you can easily configure
 
 | Platform | GitHub | Greasy Fork | Version | Last Updated | Changelog |
 | :--- | :--- | :--- | :--- | :--- | :--- |
-| **YouTube** | [![Download](https://img.shields.io/badge/Download-blue?style=flat-square&logo=download)](https://raw.githubusercontent.com/p65536/Userscripts-Collection/main/scripts/YouTube-UI-Customizer/YouTube-UI-Customizer.user.js) | [![Greasy Fork](https://img.shields.io/badge/Install-green?style=flat-square&logo=greasyfork)](https://greasyfork.org/en/scripts/546668-youtube-ui-customizer) | 1.0.0 | 2025/08/22 | [View](./scripts/YouTube-UI-Customizer/CHANGELOG.md) |
+| **YouTube** | [![Download](https://img.shields.io/badge/Download-blue?style=flat-square&logo=download)](https://raw.githubusercontent.com/p65536/Userscripts-Collection/main/scripts/YouTube-UI-Customizer/YouTube-UI-Customizer.user.js) | [![Greasy Fork](https://img.shields.io/badge/Install-green?style=flat-square&logo=greasyfork)](https://greasyfork.org/en/scripts/546668-youtube-ui-customizer) | 1.1.0 | 2025/10/25 | [View](./scripts/YouTube-UI-Customizer/CHANGELOG.md) |
 
 ### 2. RedGIFs Video Download Button
 
