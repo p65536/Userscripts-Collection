@@ -1,5 +1,9 @@
 # Changelog
 
+## [1.1.2] - 2025-10-25  
+- **Fixed:**  
+  - Updated the tooltip text for the "Hide Shorts" toggle. The old text incorrectly stated that a page reload was required to show Shorts again. The feature updates dynamically via CSS, so a reload is not needed.
+
 ## [1.1.1] - 2025-10-25  
 - **Fixed:**  
   - Removed the brief flash of the Shorts player by executing the redirect at `document-start`.  
