@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         YouTube-UI-Customizer
 // @namespace    https://github.com/p65536
-// @version      1.0.0
+// @version      1.1.0
 // @license      MIT
 // @description  Enhances your YouTube experience. Customize the video grid layout by adjusting thumbnails per row, hide Shorts content, and automatically redirect the Shorts player to the standard video player.
 // @icon         https://www.youtube.com/favicon.ico
@@ -66,9 +66,105 @@
     // SECTION: Execution Guard
     // =================================================================================
 
-    window.__myproject_guard__ = window.__myproject_guard__ || {};
-    if (window.__myproject_guard__[`${APPID}_executed`]) return;
-    window.__myproject_guard__[`${APPID}_executed`] = true;
+    class ExecutionGuard {
+        // A shared key for all scripts from the same author to avoid polluting the window object.
+        static #GUARD_KEY = `__${OWNERID}_guard__`;
+        // A specific key for this particular script.
+        static #APP_KEY = `${APPID}_executed`;
+
+        /**
+         * Checks if the script has already been executed on the page.
+         * @returns {boolean} True if the script has run, otherwise false.
+         */
+        static hasExecuted() {
+            return window[this.#GUARD_KEY]?.[this.#APP_KEY] || false;
+        }
+
+        /**
+         * Sets the flag indicating the script has now been executed.
+         */
+        static setExecuted() {
+            window[this.#GUARD_KEY] = window[this.#GUARD_KEY] || {};
+            window[this.#GUARD_KEY][this.#APP_KEY] = true;
+        }
+    }
+
+    // =================================================================================
+    // SECTION: Configuration and Constants
+    // =================================================================================
+
+    const CONSTANTS = {
+        CONFIG_KEY: `${APPID}_config`,
+        TIMERS: {
+            DEBOUNCE_MS: 300,
+        },
+        SELECTORS: {
+            shortsFullScan: [
+                'ytd-reel-shelf-renderer',
+                'ytd-rich-section-renderer:has(ytd-rich-shelf-renderer[is-shorts])',
+                'ytd-rich-item-renderer:has(ytd-thumbnail-overlay-time-status-renderer[overlay-style="SHORTS"])',
+                'ytd-grid-video-renderer:has(ytd-thumbnail-overlay-time-status-renderer[overlay-style="SHORTS"])',
+                'ytd-video-renderer:has(a[href*="/shorts/"])',
+                'ytd-compact-video-renderer:has(a[href*="/shorts/"])',
+                'ytd-guide-entry-renderer[guide-entry-title="Shorts"]',
+                'ytd-mini-guide-entry-renderer[aria-label="Shorts"]',
+            ],
+        },
+        UI_DEFAULTS: {
+            SETTINGS_BUTTON: {
+                top: '12px',
+                right: '240px',
+                width: '36px',
+                height: '36px',
+                zIndex: 10000,
+            },
+            SLIDER: {
+                min: 2,
+                max: 10,
+                step: 1,
+            },
+        },
+    };
+
+    const DEFAULT_CONFIG = {
+        options: {
+            itemsPerRow: 5,
+            hideShorts: true,
+            redirectShorts: true,
+            syncTabs: true,
+        },
+    };
+
+    const SITE_STYLES = {
+        youtube: {
+            SETTINGS_BUTTON: {
+                background: 'var(--yt-spec-brand-background-solid, transparent)',
+                borderColor: 'var(--yt-spec-border-primary, #ddd)',
+                backgroundHover: 'var(--yt-spec-badge-chip-background, #f0f0f0)',
+                borderRadius: '50%',
+                iconDef: {
+                    tag: 'svg',
+                    props: { xmlns: 'http://www.w3.org/2000/svg', height: '24px', viewBox: '0 -960 960 960', width: '24px', fill: 'var(--yt-spec-icon-active-other, #606060)' },
+                    children: [
+                        {
+                            tag: 'path',
+                            props: {
+                                d: 'M480-160H160q-33 0-56.5-23.5T80-240v-480q0-33 23.5-56.5T160-800h640q33 0 56.5 23.5T880-720v200h-80v-200H160v480h320v80ZM380-300v-360l280 180-280 180ZM714-40l-12-60q-12-5-22.5-10.5T658-124l-58 18-40-68 46-40q-2-14-2-26t2-26l-46-40 40-68 58 18q11-8 21.5-13.5T702-380l12-60h80l12 60q12 5 22.5 11t21.5 15l58-20 40 70-46 40q2 12 2 25t-2 25l46 40-40 68-58-18q-11 8-21.5 13.5T806-100l-12 60h-80Zm40-120q33 0 56.5-23.5T834-240q0-33-23.5-56.5T754-320q-33 0-56.5 23.5T674-240q0 33 23.5 56.5T754-160Z',
+                            },
+                        },
+                    ],
+                },
+            },
+            SETTINGS_PANEL: {
+                bg: 'var(--yt-spec-menu-background, #fff)',
+                text_primary: 'var(--yt-spec-text-primary, #030303)',
+                text_secondary: 'var(--yt-spec-text-secondary, #606060)',
+                border_default: 'var(--yt-spec-border-primary, #ddd)',
+                accent_color: 'var(--yt-spec-call-to-action, #065fd4)',
+                input_bg: 'var(--yt-spec-brand-background-primary, #f9f9f9)',
+            },
+        },
+    };
 
     // =================================================================================
     // SECTION: Event-Driven Architecture (Pub/Sub)
@@ -145,11 +241,14 @@
     }
 
     /**
+     * @typedef {Node|string|number|boolean|null|undefined} HChild
+     */
+    /**
      * Creates a DOM element using a hyperscript-style syntax.
      * @param {string} tag - Tag name with optional ID/class (e.g., "div#app.container", "my-element").
-     * @param {Object|Array|string|Node} [propsOrChildren] - Attributes object or children.
-     * @param {Array|string|Node} [children] - Children (if props are specified).
-     * @returns {HTMLElement|SVGElement} - The created DOM element.
+     * @param {object | HChild | HChild[]} [propsOrChildren] - Attributes object or children.
+     * @param {HChild | HChild[]} [children] - Children (if props are specified).
+     * @returns {HTMLElement|SVGElement} The created DOM element.
      */
     function h(tag, propsOrChildren, children) {
         const SVG_NS = 'http://www.w3.org/2000/svg';
@@ -157,11 +256,16 @@
         if (!match) throw new Error(`Invalid tag syntax: ${tag}`);
 
         const [, tagName, id, classList] = match;
-        const isSVG = ['svg', 'path'].includes(tagName);
+        const isSVG = ['svg', 'circle', 'rect', 'path', 'g', 'line', 'text', 'use', 'defs', 'clipPath'].includes(tagName);
         const el = isSVG ? document.createElementNS(SVG_NS, tagName) : document.createElement(tagName);
 
         if (id) el.id = id.slice(1);
-        if (classList) el.className = classList.replace(/\./g, ' ').trim();
+        if (classList) {
+            const classes = classList.replace(/\./g, ' ').trim();
+            if (classes) {
+                el.classList.add(...classes.split(/\s+/));
+            }
+        }
 
         let props = {};
         let childrenArray;
@@ -172,32 +276,81 @@
             childrenArray = propsOrChildren;
         }
 
-        const directProperties = new Set(['value', 'checked', 'selected', 'textContent']);
+        // --- Start of Attribute/Property Handling ---
+        const directProperties = new Set(['value', 'checked', 'selected', 'readOnly', 'disabled', 'multiple', 'textContent']);
+        const urlAttributes = new Set(['href', 'src', 'action', 'formaction']);
+        const safeProtocols = new Set(['https:', 'http:', 'mailto:', 'tel:', 'blob:', 'data:']);
+
         for (const [key, value] of Object.entries(props)) {
-            if (key === 'style' && typeof value === 'object') {
-                Object.assign(el.style, value);
-            } else if (directProperties.has(key)) {
+            // 0. Handle `ref` callback (highest priority after props parsing).
+            if (key === 'ref' && typeof value === 'function') {
+                value(el);
+            }
+            // 1. Security check for URL attributes.
+            else if (urlAttributes.has(key)) {
+                const url = String(value);
+                try {
+                    const parsedUrl = new URL(url); // Throws if not an absolute URL.
+                    if (safeProtocols.has(parsedUrl.protocol)) {
+                        el.setAttribute(key, url);
+                    } else {
+                        el.setAttribute(key, '#');
+                        Logger.warn(`Blocked potentially unsafe protocol "${parsedUrl.protocol}" in attribute "${key}":`, url);
+                    }
+                } catch {
+                    el.setAttribute(key, '#');
+                    Logger.warn(`Blocked invalid or relative URL in attribute "${key}":`, url);
+                }
+            }
+            // 2. Direct property assignments.
+            else if (directProperties.has(key)) {
                 el[key] = value;
+            }
+            // 3. Other specialized handlers.
+            else if (key === 'style' && typeof value === 'object') {
+                Object.assign(el.style, value);
+            } else if (key === 'dataset' && typeof value === 'object') {
+                for (const [dataKey, dataVal] of Object.entries(value)) {
+                    el.dataset[dataKey] = dataVal;
+                }
             } else if (key.startsWith('on') && typeof value === 'function') {
                 el.addEventListener(key.slice(2).toLowerCase(), value);
-            } else if (value !== false && value != null) {
-                el.setAttribute(key, value === true ? '' : value);
+            } else if (key === 'className') {
+                const classes = String(value).trim();
+                if (classes) {
+                    el.classList.add(...classes.split(/\s+/));
+                }
+            } else if (key.startsWith('aria-')) {
+                el.setAttribute(key, String(value));
+            }
+            // 4. Default attribute handling.
+            else if (value !== false && value !== null) {
+                el.setAttribute(key, value === true ? '' : String(value));
             }
         }
+        // --- End of Attribute/Property Handling ---
 
         const fragment = document.createDocumentFragment();
+        /**
+         *
+         * @param child
+         */
         function append(child) {
-            if (child == null || child === false) return;
+            if (child === null || child === false || typeof child === 'undefined') return;
             if (typeof child === 'string' || typeof child === 'number') {
-                fragment.appendChild(document.createTextNode(child));
+                fragment.appendChild(document.createTextNode(String(child)));
             } else if (Array.isArray(child)) {
                 child.forEach(append);
             } else if (child instanceof Node) {
                 fragment.appendChild(child);
+            } else {
+                throw new Error('Unsupported child type');
             }
         }
         append(childrenArray);
+
         el.appendChild(fragment);
+
         return el;
     }
 
@@ -211,97 +364,6 @@
         const children = def.children ? def.children.map((child) => createIconFromDef(child)) : [];
         return h(def.tag, def.props, children);
     }
-
-    // =================================================================================
-    // SECTION: Configuration and Constants
-    // =================================================================================
-
-    const CONSTANTS = {
-        CONFIG_KEY: `${APPID}_config`,
-        TIMERS: {
-            DEBOUNCE_MS: 300,
-            FULL_SCAN_DELAY_MS: 150,
-        },
-        SELECTORS: {
-            pageManager: 'ytd-page-manager',
-            parentContainers: {
-                fullScan: 'ytd-rich-item-renderer, ytd-grid-video-renderer, ytd-item-section-renderer, ytd-guide-entry-renderer, ytd-mini-guide-entry-renderer, ytd-rich-section-renderer',
-                dynamicOnly: 'ytd-rich-item-renderer, ytd-grid-video-renderer, ytd-item-section-renderer',
-            },
-            // Selectors for the full scan (on navigation/save)
-            shortsFullScan: [
-                'ytd-reel-shelf-renderer',
-                'ytd-rich-section-renderer:has(ytd-rich-shelf-renderer[is-shorts])',
-                'ytd-rich-item-renderer:has(ytd-thumbnail-overlay-time-status-renderer[overlay-style="SHORTS"])',
-                'ytd-grid-video-renderer:has(ytd-thumbnail-overlay-time-status-renderer[overlay-style="SHORTS"])',
-                'ytd-video-renderer:has(a[href*="/shorts/"])',
-                'ytd-compact-video-renderer:has(a[href*="/shorts/"])',
-                'ytd-guide-entry-renderer[guide-entry-title="Shorts"]',
-                'ytd-mini-guide-entry-renderer[aria-label="Shorts"]',
-            ],
-            // Lightweight selectors for dynamically added content (on scroll)
-            shortsDynamicOnly: [
-                'ytd-rich-item-renderer:has(ytd-thumbnail-overlay-time-status-renderer[overlay-style="SHORTS"])',
-                'ytd-grid-video-renderer:has(ytd-thumbnail-overlay-time-status-renderer[overlay-style="SHORTS"])',
-                'ytd-video-renderer:has(a[href*="/shorts/"])',
-                'ytd-compact-video-renderer:has(a[href*="/shorts/"])',
-            ],
-        },
-        UI_DEFAULTS: {
-            SETTINGS_BUTTON: {
-                top: '12px',
-                right: '240px',
-                width: '36px',
-                height: '36px',
-                zIndex: 10000,
-            },
-            SLIDER: {
-                min: 2,
-                max: 10,
-                step: 1,
-            },
-        },
-    };
-
-    const DEFAULT_CONFIG = {
-        options: {
-            itemsPerRow: 5,
-            hideShorts: true,
-            redirectShorts: true,
-            syncTabs: true,
-        },
-    };
-
-    const SITE_STYLES = {
-        youtube: {
-            SETTINGS_BUTTON: {
-                background: 'var(--yt-spec-brand-background-solid, transparent)',
-                borderColor: 'var(--yt-spec-border-primary, #ddd)',
-                backgroundHover: 'var(--yt-spec-badge-chip-background, #f0f0f0)',
-                borderRadius: '50%',
-                iconDef: {
-                    tag: 'svg',
-                    props: { xmlns: 'http://www.w3.org/2000/svg', height: '24px', viewBox: '0 -960 960 960', width: '24px', fill: 'var(--yt-spec-icon-active-other, #606060)' },
-                    children: [
-                        {
-                            tag: 'path',
-                            props: {
-                                d: 'M480-160H160q-33 0-56.5-23.5T80-240v-480q0-33 23.5-56.5T160-800h640q33 0 56.5 23.5T880-720v200h-80v-200H160v480h320v80ZM380-300v-360l280 180-280 180ZM714-40l-12-60q-12-5-22.5-10.5T658-124l-58 18-40-68 46-40q-2-14-2-26t2-26l-46-40 40-68 58 18q11-8 21.5-13.5T702-380l12-60h80l12 60q12 5 22.5 11t21.5 15l58-20 40 70-46 40q2 12 2 25t-2 25l46 40-40 68-58-18q-11 8-21.5 13.5T806-100l-12 60h-80Zm40-120q33 0 56.5-23.5T834-240q0-33-23.5-56.5T754-320q-33 0-56.5 23.5T674-240q0 33 23.5 56.5T754-160Z',
-                            },
-                        },
-                    ],
-                },
-            },
-            SETTINGS_PANEL: {
-                bg: 'var(--yt-spec-menu-background, #fff)',
-                text_primary: 'var(--yt-spec-text-primary, #030303)',
-                text_secondary: 'var(--yt-spec-text-secondary, #606060)',
-                border_default: 'var(--yt-spec-border-primary, #ddd)',
-                accent_color: 'var(--yt-spec-call-to-action, #065fd4)',
-                input_bg: 'var(--yt-spec-brand-background-primary, #f9f9f9)',
-            },
-        },
-    };
 
     // =================================================================================
     // SECTION: Configuration Management (GM Storage)
@@ -387,7 +449,7 @@
             this.debouncedSave = debounce(async () => {
                 const newConfig = await this._collectDataFromForm();
                 EventBus.publish('config:save', newConfig);
-            }, 300);
+            }, CONSTANTS.TIMERS.DEBOUNCE_MS);
             this._handleDocumentClick = this._handleDocumentClick.bind(this);
         }
 
@@ -524,20 +586,6 @@
     }
 
     class SettingsPanelComponent extends SettingsPanelBase {
-        constructor(callbacks) {
-            super(callbacks);
-            this.debouncedSave = debounce(async () => {
-                const newConfig = await this._collectDataFromForm();
-                EventBus.publish('config:save', newConfig);
-            }, 300);
-            this._handleDocumentClick = this._handleDocumentClick.bind(this);
-        }
-
-        hide() {
-            this.element.style.display = 'none';
-            document.removeEventListener('click', this._handleDocumentClick, true);
-            this.callbacks.onClose?.(); // Notify that the panel has closed
-        }
         _createPanelContent() {
             const sliderSettings = CONSTANTS.UI_DEFAULTS.SLIDER;
             const createToggle = (id, title) => {
@@ -559,10 +607,16 @@
                     ]),
                 ]),
                 h('div', { style: { borderTop: '1px solid var(--yt-spec-border-primary, #ddd)', margin: '12px 0' } }),
-                h(`div.${APPID}-submenu-row`, [h('label', { htmlFor: `${APPID}-hide-shorts-toggle` }, 'Hide YouTube Shorts'), createToggle(`${APPID}-hide-shorts-toggle`, 'Hides Shorts videos. When turned off, a page reload is required to show them again.')]),
-                h(`div.${APPID}-settings-note`, '* Turning this off requires a page reload to take effect.'),
+                h(`div.${APPID}-submenu-row`, [
+                    h('label', { htmlFor: `${APPID}-hide-shorts-toggle` }, 'Hide YouTube Shorts'),
+                    createToggle(`${APPID}-hide-shorts-toggle`, 'Hides Shorts videos. When turned off, a page reload is required to show them again.'),
+                ]),
                 h('div', { style: { borderTop: '1px solid var(--yt-spec-border-primary, #ddd)', margin: '12px 0' } }),
-                h(`div.${APPID}-submenu-row`, [h('label', { htmlFor: `${APPID}-redirect-shorts-toggle` }, 'Redirect Shorts player'), createToggle(`${APPID}-redirect-shorts-toggle`, 'Redirects the Shorts player to the standard video player.')]),
+                h(`div.${APPID}-submenu-row`, [
+                    h('label', { htmlFor: `${APPID}-redirect-shorts-toggle` }, 'Redirect Shorts player'),
+                    createToggle(`${APPID}-redirect-shorts-toggle`, 'Redirects the Shorts player to the standard video player.'),
+                ]),
+                h(`div.${APPID}-settings-note`, 'Note: Standard navigation redirects instantly. A brief flash may occur when opening Shorts in a new tab (e.g., Ctrl+Click).'),
                 h('div', { style: { borderTop: '1px solid var(--yt-spec-border-primary, #ddd)', margin: '12px 0' } }),
                 h(`div.${APPID}-submenu-row`, [h('label', { htmlFor: `${APPID}-sync-tabs-toggle` }, 'Sync settings across tabs'), createToggle(`${APPID}-sync-tabs-toggle`, 'Automatically apply settings changes to all open YouTube tabs.')]),
                 h(`div#${APPID}-sync-note.${APPID}-settings-note`, { style: { 'text-align': 'right', color: 'var(--yt-spec-text-brand, #c00)' } }),
@@ -785,9 +839,7 @@
             // Check the INCOMING config to see if sync is enabled.
             // This allows a tab to RECEIVE a "sync on" command from another tab.
             if (!newConfig.options.syncTabs) {
-                // If the incoming change is to turn sync OFF, we still need to update
-                // the local config to reflect that, but we won't apply other settings.
-                this.app.configManager.config = newConfig;
+                this.app.configManager.config.options.syncTabs = false; // Only update the sync option
                 Logger.log('Sync disabled remotely. Updating local config state only.');
                 return;
             }
@@ -885,133 +937,7 @@
         constructor() {
             this.configManager = null;
             this.uiManager = null;
-            this.observer = null;
             this.syncManager = new SyncManager(this);
-            this.debouncedProcessNodes = debounce((nodes) => this.processNodes(nodes), 300);
-        }
-
-        /**
-         * Lightweight processor for dynamically added nodes (e.g., from infinite scroll).
-         * It only searches for video items, not static elements like sidebar links.
-         * @param {NodeList} nodes - The nodes to process.
-         */
-        processNodes(nodes) {
-            const config = this.configManager.get();
-            if (!config.options.hideShorts) return;
-
-            const dynamicSelectors = CONSTANTS.SELECTORS.shortsDynamicOnly;
-            let removedCount = 0;
-
-            for (const node of nodes) {
-                if (node.nodeType !== 1) continue;
-
-                for (const selector of dynamicSelectors) {
-                    const elements = node.matches(selector) ? [node] : node.querySelectorAll(selector);
-                    elements.forEach((el) => {
-                        if (el.dataset.ytteProcessed) return;
-                        const parentToRemove = el.closest(CONSTANTS.SELECTORS.parentContainers.dynamicOnly);
-                        (parentToRemove || el).remove();
-                        removedCount++;
-                    });
-                }
-            }
-            if (removedCount > 0) {
-                Logger.log(`Removed ${removedCount} new Shorts item(s).`);
-            }
-        }
-
-        /**
-         * Heavyweight full-page scan to remove all types of Shorts elements.
-         * Called only on major page loads/navigations.
-         */
-        runFullShortsScan() {
-            const config = this.configManager.get();
-            if (!config.options.hideShorts) return;
-
-            const allShortsSelectors = CONSTANTS.SELECTORS.shortsFullScan;
-            let removedCount = 0;
-
-            for (const selector of allShortsSelectors) {
-                document.querySelectorAll(selector).forEach((el) => {
-                    if (el.dataset.ytteProcessed) return;
-
-                    const parentToRemove = el.closest(CONSTANTS.SELECTORS.parentContainers.fullScan);
-                    const target = parentToRemove || el;
-
-                    target.remove();
-                    target.dataset.ytteProcessed = 'true';
-                    removedCount++;
-                });
-            }
-            if (removedCount > 0) {
-                Logger.log(`Initial scan removed ${removedCount} Shorts element(s).`);
-            }
-        }
-
-        /**
-         * Lightweight method to apply styles. Called frequently.
-         */
-        applySettings() {
-            const config = this.configManager.get();
-            StyleManager.update(config.options);
-        }
-
-        /**
-         * Applies an update received from another tab.
-         * @param {object} newConfig - The new configuration object from the remote tab.
-         */
-        applyRemoteUpdate(newConfig) {
-            this.configManager.config = newConfig;
-            this.applySettings();
-            this.runFullShortsScan();
-            // Repopulate the form in case the user opens it later.
-            this.uiManager.components.settingsPanel.populateForm();
-        }
-
-        handleDOMChanges(mutationsList) {
-            const addedNodes = [];
-            for (const mutation of mutationsList) {
-                addedNodes.push(...mutation.addedNodes);
-            }
-            if (addedNodes.length > 0) {
-                // Call the lightweight processor for new nodes.
-                this.debouncedProcessNodes(addedNodes);
-            }
-        }
-
-        async handleSave(newConfig) {
-            this.syncManager.onSave(); // Notify SyncManager that a local save is happening.
-            await this.configManager.save(newConfig);
-            Logger.log('Configuration saved.');
-
-            // On save, only apply the (fast) stylesheet update.
-            this.applySettings();
-
-            // If the user just turned on "hideShorts", run a full scan once to clean the page.
-            if (newConfig.options.hideShorts) {
-                this.runFullShortsScan();
-            }
-        }
-
-        handleNavigation() {
-            Logger.log(`Navigation finished. Running updates for: ${window.location.href}`);
-            const config = this.configManager.get();
-
-            if (config.options.redirectShorts && window.location.pathname.startsWith('/shorts/')) {
-                const videoId = window.location.pathname.split('/shorts/')[1];
-                if (videoId) {
-                    const newUrl = `/watch?v=${videoId}`;
-                    Logger.log(`Shorts page detected, redirecting to: ${newUrl}`);
-                    window.location.href = newUrl;
-                    return;
-                }
-            }
-
-            // On navigation, apply styles immediately and run a full, heavyweight scan.
-            this.applySettings();
-            setTimeout(() => {
-                this.runFullShortsScan();
-            }, CONSTANTS.TIMERS.FULL_SCAN_DELAY_MS);
         }
 
         async init() {
@@ -1030,28 +956,85 @@
             this.uiManager.init();
 
             EventBus.subscribe('config:save', this.handleSave.bind(this));
+            // Listen for both start (for redirects) and finish (for style/scan)
+            document.addEventListener('yt-navigate-start', this.handleRedirect.bind(this));
             document.addEventListener('yt-navigate-finish', this.handleNavigation.bind(this));
 
-            this.observer = new MutationObserver(this.handleDOMChanges.bind(this));
-
-            // Use a preliminary observer to find the stable content container, then switch to it.
-            const parentObserver = new MutationObserver((mutations, obs) => {
-                const targetNode = document.querySelector(CONSTANTS.SELECTORS.pageManager);
-                if (targetNode) {
-                    Logger.log('Found ytd-page-manager. Starting primary observer.');
-                    this.observer.observe(targetNode, { childList: true, subtree: true });
-                    obs.disconnect();
-                }
-            });
-            parentObserver.observe(document.body, { childList: true, subtree: true });
-
             this.handleNavigation();
+        }
+
+        /**
+         * Lightweight method to apply styles. Called frequently.
+         */
+        applySettings() {
+            const config = this.configManager.get();
+            StyleManager.update(config.options);
+        }
+
+        /**
+         * Applies an update received from another tab.
+         * @param {object} newConfig - The new configuration object from the remote tab.
+         */
+        applyRemoteUpdate(newConfig) {
+            this.configManager.config = newConfig;
+            this.applySettings();
+            // Repopulate the form in case the user opens it later.
+            this.uiManager.components.settingsPanel.populateForm();
+        }
+
+        async handleSave(newConfig) {
+            this.syncManager.onSave(); // Notify SyncManager that a local save is happening.
+            await this.configManager.save(newConfig);
+            Logger.log('Configuration saved.');
+
+            // On save, only apply the (fast) stylesheet update.
+            this.applySettings();
+        }
+
+        handleRedirect(e) {
+            const config = this.configManager.get();
+            if (!config.options.redirectShorts) return;
+
+            const url = e.detail.url;
+            if (url && url.startsWith('/shorts/')) {
+                const videoId = url.split('/shorts/')[1];
+                if (videoId) {
+                    e.preventDefault(); // Stop the navigation to the Shorts player
+                    const newUrl = `/watch?v=${videoId}`;
+                    Logger.log(`Shorts navigation detected, redirecting to: ${newUrl}`);
+                    window.history.pushState({}, '', newUrl);
+                    window.dispatchEvent(new PopStateEvent('popstate', { state: {} }));
+                }
+            }
+        }
+
+        handleNavigation() {
+            Logger.log(`Navigation finished. Running updates for: ${window.location.href}`);
+            const config = this.configManager.get();
+
+            // Handle full page loads (e.g., Ctrl+Click, manual URL entry)
+            // This will have a "flash" as the script must await the async config load.
+            if (config.options.redirectShorts && window.location.pathname.startsWith('/shorts/')) {
+                const videoId = window.location.pathname.split('/shorts/')[1];
+                if (videoId) {
+                    const newUrl = `/watch?v=${videoId}`;
+                    Logger.log(`Shorts page detected on load, redirecting to: ${newUrl}`);
+                    window.location.href = newUrl;
+                    return; // Stop further processing as we are navigating away
+                }
+            }
+
+            // On navigation, apply styles immediately.
+            this.applySettings();
         }
     }
 
     // =================================================================================
     // SECTION: Entry Point
     // =================================================================================
+
+    if (ExecutionGuard.hasExecuted()) return;
+    ExecutionGuard.setExecuted();
 
     Logger.log('Script loaded.');
     const app = new MainApp();
