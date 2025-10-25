@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         YouTube-UI-Customizer
 // @namespace    https://github.com/p65536
-// @version      1.1.1
+// @version      1.1.2
 // @license      MIT
 // @description  Enhances your YouTube experience. Customize the video grid layout by adjusting thumbnails per row, hide Shorts content, and automatically redirect the Shorts player to the standard video player.
 // @icon         https://www.youtube.com/favicon.ico
@@ -619,7 +619,7 @@
                 h('div', { style: { borderTop: '1px solid var(--yt-spec-border-primary, #ddd)', margin: '12px 0' } }),
                 h(`div.${APPID}-submenu-row`, [
                     h('label', { htmlFor: `${APPID}-hide-shorts-toggle` }, 'Hide YouTube Shorts'),
-                    createToggle(`${APPID}-hide-shorts-toggle`, 'Hides Shorts videos. When turned off, a page reload is required to show them again.'),
+                    createToggle(`${APPID}-hide-shorts-toggle`, 'Hides Shorts videos from shelves, search results, and navigation menus.'),
                 ]),
                 h('div', { style: { borderTop: '1px solid var(--yt-spec-border-primary, #ddd)', margin: '12px 0' } }),
                 h(`div.${APPID}-submenu-row`, [
