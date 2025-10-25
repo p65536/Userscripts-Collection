@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         YouTube-UI-Customizer
 // @namespace    https://github.com/p65536
-// @version      1.1.0
+// @version      1.1.1
 // @license      MIT
 // @description  Enhances your YouTube experience. Customize the video grid layout by adjusting thumbnails per row, hide Shorts content, and automatically redirect the Shorts player to the standard video player.
 // @icon         https://www.youtube.com/favicon.ico
@@ -10,12 +10,22 @@
 // @grant        GM_getValue
 // @grant        GM_setValue
 // @grant        GM_addValueChangeListener
-// @run-at       document-idle
+// @run-at       document-start
 // @noframes
 // ==/UserScript==
 
 (() => {
     'use strict';
+
+    // --- Fast Redirect for Shorts (Full Page Load) ---
+    // This runs at @run-at document-start, *before* the DOM is ready.
+    // It intercepts full page loads (e.g., new tab, ctrl+click) of /shorts/ URLs
+    // and immediately replaces them with the standard /watch?v= player.
+    // This prevents the Shorts player UI from ever loading or "flashing".
+    if (location.pathname.startsWith('/shorts/')) {
+        location.replace(location.href.replace('/shorts/', '/watch?v='));
+        return; // Stop the rest of the script from executing, as we are navigating away.
+    }
 
     // =================================================================================
     // SECTION: Script-Specific Definitions
@@ -616,7 +626,6 @@
                     h('label', { htmlFor: `${APPID}-redirect-shorts-toggle` }, 'Redirect Shorts player'),
                     createToggle(`${APPID}-redirect-shorts-toggle`, 'Redirects the Shorts player to the standard video player.'),
                 ]),
-                h(`div.${APPID}-settings-note`, 'Note: Standard navigation redirects instantly. A brief flash may occur when opening Shorts in a new tab (e.g., Ctrl+Click).'),
                 h('div', { style: { borderTop: '1px solid var(--yt-spec-border-primary, #ddd)', margin: '12px 0' } }),
                 h(`div.${APPID}-submenu-row`, [h('label', { htmlFor: `${APPID}-sync-tabs-toggle` }, 'Sync settings across tabs'), createToggle(`${APPID}-sync-tabs-toggle`, 'Automatically apply settings changes to all open YouTube tabs.')]),
                 h(`div#${APPID}-sync-note.${APPID}-settings-note`, { style: { 'text-align': 'right', color: 'var(--yt-spec-text-brand, #c00)' } }),
@@ -827,6 +836,13 @@
                 return;
             }
 
+            // Guard: Wait for the local config to be loaded before processing a remote change.
+            await this.app.configPromise;
+            if (!this.app.configManager.config) {
+                Logger.error('Config is still not available after promise resolved. Aborting remote change.');
+                return;
+            }
+
             Logger.log('Remote config change detected.');
             let newConfig;
             try {
@@ -844,7 +860,8 @@
                 return;
             }
 
-            if (this.app.uiManager.components.settingsPanel.isOpen()) {
+            // Guard: UIManager might not be initialized yet
+            if (this.app.uiManager && this.app.uiManager.components.settingsPanel.isOpen()) {
                 Logger.log('Settings panel is open. Deferring update and showing notification.');
                 this.pendingRemoteConfig = newConfig;
                 this._showConflictNotification();
@@ -938,16 +955,47 @@
             this.configManager = null;
             this.uiManager = null;
             this.syncManager = new SyncManager(this);
+            this.configPromise = null; // Promise for config load
+
+            // Promise to resolve when DOM-dependent components are initialized
+            this.domReadyPromise = new Promise((resolve) => {
+                this.resolveDomReadyPromise = resolve;
+            });
         }
 
-        async init() {
-            Logger.log('Initializing...');
+        /**
+         * Stage 1: Initialize non-DOM components and listeners.
+         * This runs immediately at document-start.
+         */
+        init() {
+            Logger.log('Initializing (Stage 1)...');
 
             this.configManager = new ConfigManager();
-            await this.configManager.load();
+            this.configPromise = this.configManager.load(); // Start loading config
+
+            this.syncManager.init(); // Initialize the sync listener.
+
+            // Register all event listeners immediately to prevent race conditions
+            EventBus.subscribe('config:save', this.handleSave.bind(this));
+            document.addEventListener('yt-navigate-start', this.handleRedirect.bind(this));
+            document.addEventListener('yt-navigate-finish', this.handleNavigation.bind(this));
+
+            // Register Stage 2: Initialize DOM components when ready
+            document.addEventListener('DOMContentLoaded', this.initDOMComponents.bind(this));
+        }
+
+        /**
+         * Stage 2: Initialize DOM-dependent components.
+         * This runs after the DOM is ready.
+         */
+        async initDOMComponents() {
+            Logger.log('Initializing (Stage 2 - DOM Ready)...');
+
+            // Ensure config is loaded before creating UI
+            await this.configPromise;
+            Logger.log('Config loaded, initializing UI.');
 
             StyleManager.init();
-            this.syncManager.init(); // Initialize the sync listener.
 
             const siteStyles = SITE_STYLES.youtube;
             this.uiManager = new UIManager(() => this.configManager.get(), siteStyles, {
@@ -955,18 +1003,22 @@
             });
             this.uiManager.init();
 
-            EventBus.subscribe('config:save', this.handleSave.bind(this));
-            // Listen for both start (for redirects) and finish (for style/scan)
-            document.addEventListener('yt-navigate-start', this.handleRedirect.bind(this));
-            document.addEventListener('yt-navigate-finish', this.handleNavigation.bind(this));
+            // Apply initial settings now that UI and config are ready
+            this.applySettings();
 
-            this.handleNavigation();
+            // Signal that DOM initialization is complete
+            this.resolveDomReadyPromise();
         }
 
         /**
-         * Lightweight method to apply styles. Called frequently.
+         * Lightweight method to apply styles.
+         * Ensures config is loaded and DOM components (StyleManager) are initialized before acting.
          */
-        applySettings() {
+        async applySettings() {
+            // Wait for both config and DOM initialization to be complete
+            await this.configPromise;
+            await this.domReadyPromise;
+
             const config = this.configManager.get();
             StyleManager.update(config.options);
         }
@@ -978,8 +1030,12 @@
         applyRemoteUpdate(newConfig) {
             this.configManager.config = newConfig;
             this.applySettings();
-            // Repopulate the form in case the user opens it later.
-            this.uiManager.components.settingsPanel.populateForm();
+
+            // Guard: UIManager might not be initialized yet
+            if (this.uiManager) {
+                // Repopulate the form in case the user opens it later.
+                this.uiManager.components.settingsPanel.populateForm();
+            }
         }
 
         async handleSave(newConfig) {
@@ -991,7 +1047,8 @@
             this.applySettings();
         }
 
-        handleRedirect(e) {
+        async handleRedirect(e) {
+            await this.configPromise; // Wait for config
             const config = this.configManager.get();
             if (!config.options.redirectShorts) return;
 
@@ -1010,21 +1067,9 @@
 
         handleNavigation() {
             Logger.log(`Navigation finished. Running updates for: ${window.location.href}`);
-            const config = this.configManager.get();
 
-            // Handle full page loads (e.g., Ctrl+Click, manual URL entry)
-            // This will have a "flash" as the script must await the async config load.
-            if (config.options.redirectShorts && window.location.pathname.startsWith('/shorts/')) {
-                const videoId = window.location.pathname.split('/shorts/')[1];
-                if (videoId) {
-                    const newUrl = `/watch?v=${videoId}`;
-                    Logger.log(`Shorts page detected on load, redirecting to: ${newUrl}`);
-                    window.location.href = newUrl;
-                    return; // Stop further processing as we are navigating away
-                }
-            }
-
-            // On navigation, apply styles immediately.
+            // On navigation, apply styles.
+            // applySettings() will wait for config if it's not ready yet.
             this.applySettings();
         }
     }
@@ -1036,7 +1081,7 @@
     if (ExecutionGuard.hasExecuted()) return;
     ExecutionGuard.setExecuted();
 
-    Logger.log('Script loaded.');
+    Logger.log('Script loaded. Initializing Stage 1...');
     const app = new MainApp();
-    app.init();
+    app.init(); // Run Stage 1 initialization immediately
 })();
