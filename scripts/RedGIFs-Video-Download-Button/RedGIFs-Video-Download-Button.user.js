@@ -1,14 +1,14 @@
 // ==UserScript==
 // @name         RedGIFs Video Download Button
 // @namespace    https://github.com/p65536
-// @version      1.2.0
+// @version      1.3.0
 // @license      MIT
 // @description  Adds a download button (for one-click HD downloads) and an "Open in New Tab" button to each video on the RedGIFs site.
 // @icon         https://www.redgifs.com/favicon.ico
 // @author       p65536
 // @match        https://*.redgifs.com/*
 // @grant        none
-// @run-at       document-idle
+// @run-at       document-start
 // @noframes
 // ==/UserScript==
 
@@ -25,19 +25,34 @@
     const CONSTANTS = {
         VIDEO_CONTAINER_SELECTOR: '[id^="gif_"]',
         TILE_ITEM_SELECTOR: '.tileItem',
-        API_URL_BASE: 'https://api.redgifs.com/v2/gifs/',
-        API_AUTH_URL: 'https://api.redgifs.com/v2/auth/temporary',
         WATCH_URL_BASE: 'https://www.redgifs.com/watch/',
         FILENAME_SUFFIX: '-hd.mp4',
         TOAST_DURATION: 3000,
         TOAST_ERROR_DURATION: 6000,
         TOAST_FADE_OUT_DURATION: 300,
         ICON_REVERT_DELAY: 2000,
-        TOKEN_SAFETY_MARGIN: 60000, // (ms) Refresh token if it expires within this margin
-        API_TIMEOUT: 15000, // (ms) Timeout for API requests (JSON)
-        API_RETRY_COUNT: 1, // Max number of retries for API requests
         CANCEL_LOCK_DURATION: 600, // (ms) Duration to lock download button to prevent mis-click cancel
 
+        // --- API Data Extractors ---
+        API_TARGET_HOST: 'api.redgifs.com',
+        API_TARGET_PATH_PREFIX: '/v2/',
+
+        /**
+         * Extracts the video ID from a 'gif' object in the API response.
+         * @param {object} gif - The gif object from the API.
+         * @returns {string|undefined} The video ID.
+         */
+        API_GIF_ID_EXTRACTOR: (gif) => gif?.id,
+
+        /**
+         * Extracts the HD video URL from a 'gif' object in the API response.
+         * @param {object} gif - The gif object from the API.
+         * @returns {string|undefined} The HD URL.
+         */
+        API_GIF_HD_URL_EXTRACTOR: (gif) => gif?.urls?.hd,
+        // ---------------------------
+
+        // --- Button configurations ---
         /**
          * @enum {string}
          * Defines unique keys for button configurations.
@@ -456,203 +471,138 @@
     // =================================================================================
 
     class ApiManager {
-        #guestTokenCache = null;
-        #guestTokenExpiry = null;
-        #isFetchingGuestToken = false;
-        #guestTokenPromise = null;
-
-        /**
-         * Decodes a Base64URL string into a regular string.
-         * @param {string} base64UrlString The Base64URL string.
-         * @returns {string} The decoded string.
-         * @private
-         */
-        #decodeBase64Url(base64UrlString) {
-            // Replace Base64URL-specific characters with Base64 standard characters
-            let base64 = base64UrlString.replace(/-/g, '+').replace(/_/g, '/');
-            // Add padding if missing
-            while (base64.length % 4) {
-                base64 += '=';
-            }
-            return atob(base64);
+        constructor() {
+            /** @type {Map<string, string>} */
+            this.videoCache = new Map();
         }
 
         /**
-         * Decodes a JWT token string to get its payload.
-         * @param {string} token The JWT token.
-         * @returns {object|null} The decoded payload or null if failed.
-         * @private
+         * Gets the cached HD URL for a given video ID.
+         * @param {string} videoId The ID of the video.
+         * @returns {string|undefined} The cached HD URL or undefined if not found.
          */
-        #decodeToken(token) {
-            try {
-                const payloadBase64Url = token.split('.')[1];
-                if (!payloadBase64Url) {
-                    Logger.warn('Captured token is not a valid JWT (missing payload).', token);
-                    return null;
+        getCachedHdUrl(videoId) {
+            return this.videoCache.get(videoId);
+        }
+
+        /**
+         * Sets up XHR and Fetch interceptors to capture API responses.
+         */
+        setupInterceptors() {
+            const interceptHandler = this._interceptApiResponse.bind(this);
+
+            /**
+             * Checks if a given URL matches the target API criteria.
+             * @param {string} urlString The URL to check.
+             * @returns {boolean} True if the URL should be intercepted.
+             */
+            const isTargetApi = (urlString) => {
+                try {
+                    // Use document.baseURI as a base for relative URLs
+                    const url = new URL(urlString, document.baseURI);
+                    return url.hostname === CONSTANTS.API_TARGET_HOST && url.pathname.startsWith(CONSTANTS.API_TARGET_PATH_PREFIX);
+                } catch {
+                    return false; // Invalid URL
                 }
-                const payloadJson = this.#decodeBase64Url(payloadBase64Url);
-                return JSON.parse(payloadJson);
-            } catch (error) {
-                Logger.error('Failed to decode token:', error);
-                return null;
-            }
-        }
+            };
 
-        /**
-         * Fetches a temporary guest token from the API.
-         * @returns {Promise<string>} The guest token.
-         * @private
-         */
-        async #fetchGuestToken() {
-            // Make the API request to the guest auth endpoint.
-            const response = await fetch(CONSTANTS.API_AUTH_URL, {
-                signal: AbortSignal.timeout(CONSTANTS.API_TIMEOUT), // Use timeout
-            });
+            // 1. Intercept XMLHttpRequest
+            const originalXhrOpen = window.XMLHttpRequest.prototype.open;
+            const originalXhrSend = window.XMLHttpRequest.prototype.send;
 
-            // Handle HTTP errors (e.g., 404, 500).
-            if (!response.ok) {
-                throw new Error(`Guest API auth request failed with status ${response.status}`);
-            }
+            window.XMLHttpRequest.prototype.open = function (method, url) {
+                this._interceptUrl = typeof url === 'string' && isTargetApi(url) ? url : null;
+                originalXhrOpen.apply(this, arguments);
+            };
 
-            const responseData = await response.json();
-            // Validate that the JSON response contains a token.
-            if (!responseData?.token) {
-                throw new Error('Token not found in guest auth response.');
-            }
-
-            // Decode the token to store its expiry.
-            const payload = this.#decodeToken(responseData.token);
-            // Validate the decoded payload.
-            if (!payload || !payload.exp) {
-                throw new Error('Failed to decode guest token or find expiry.');
-            }
-
-            // Cache the new token and its expiry time (in ms).
-            this.#guestTokenCache = responseData.token;
-            this.#guestTokenExpiry = payload.exp * 1000; // Convert sec to ms
-            Logger.log('Successfully fetched and decoded guest token.');
-
-            // Return the new token.
-            return this.#guestTokenCache;
-        }
-
-        /**
-         * Gets a valid guest token.
-         * Checks the cache and fetches a new token if the cached token is missing or expired.
-         * @returns {Promise<string>} A valid guest token.
-         * @private
-         */
-        async #getValidToken() {
-            const safetyMargin = CONSTANTS.TOKEN_SAFETY_MARGIN;
-
-            // --- Step 1: Try using the cached FETCHED Guest Token ---
-            if (this.#guestTokenCache && Date.now() < this.#guestTokenExpiry - safetyMargin) {
-                Logger.badge('USING GUEST TOKEN', LOG_STYLES.INFO, 'log', '(Using cached API Guest Token)');
-                return this.#guestTokenCache;
-            }
-
-            // --- Step 2: Fallback to fetching a new Guest Token (with Race Condition protection) ---
-            // Clear expired/invalid guest cache just in case
-            this.#guestTokenCache = null;
-            this.#guestTokenExpiry = null;
-
-            // Check if another request is already fetching a token
-            if (this.#isFetchingGuestToken) {
-                Logger.badge('FETCHING GUEST TOKEN', LOG_STYLES.LOG, 'log', '(Awaiting existing token fetch...)');
-                // Wait for the ongoing promise to resolve
-                return this.#guestTokenPromise;
-            }
-
-            Logger.badge('FETCHING GUEST TOKEN', LOG_STYLES.LOG, 'log', '(Token expired or missing. Fetching new Guest Token.)');
-            try {
-                // Set the flag and store the promise
-                this.#isFetchingGuestToken = true;
-                this.#guestTokenPromise = this.#fetchGuestToken();
-                const guestToken = await this.#guestTokenPromise;
-                return guestToken;
-            } catch (guestError) {
-                Logger.badge('TOKEN FAILURE', LOG_STYLES.ERROR, 'error', 'All authentication methods failed.', guestError);
-                // At this point, all options are exhausted.
-                throw new Error('All authentication methods failed.');
-            } finally {
-                // Reset the flag and promise regardless of outcome
-                this.#isFetchingGuestToken = false;
-                this.#guestTokenPromise = null;
-            }
-        }
-
-        /**
-         * Fetches video information from the RedGifs API.
-         * It actively checks token validity and retries on auth failure.
-         * @param {string} videoId - The ID of the video to fetch.
-         * @param {AbortSignal} [signal] - An optional AbortSignal to cancel the request.
-         * @returns {Promise<object>} The video information object.
-         */
-        async getVideoInfo(videoId, signal) {
-            return this.#fetchWithRetry(videoId, CONSTANTS.API_RETRY_COUNT, signal);
-        }
-
-        /**
-         * Internal fetch method with retry logic for 401 errors.
-         * @param {string} videoId - The ID of the video to fetch.
-         * @param {number} retryCount - The number of retries left.
-         * @param {AbortSignal} [signal] - An optional AbortSignal to cancel the request.
-         * @returns {Promise<object>} The video information object.
-         * @private
-         */
-        async #fetchWithRetry(videoId, retryCount, signal) {
-            try {
-                // Get a valid guest token from cache or API
-                const token = await this.#getValidToken();
-
-                // Combine the API timeout with the provided signal if it exists
-                const internalSignal = AbortSignal.timeout(CONSTANTS.API_TIMEOUT);
-                const signals = signal ? [internalSignal, signal] : [internalSignal];
-
-                // Perform the API request using fetch
-                const response = await fetch(`${CONSTANTS.API_URL_BASE}${videoId}`, {
-                    headers: { Authorization: `Bearer ${token}` },
-                    signal: AbortSignal.any(signals), // Use combined signal
-                });
-
-                // Check if the request was successful
-                if (!response.ok) {
-                    // --- Start 401 Retry Logic ---
-                    if (response.status === 401) {
-                        // Clear the guest token cache that likely caused the 401
-                        Logger.warn('Fetched Guest token was rejected (401). Clearing.');
-                        this.#guestTokenCache = null;
-                        this.#guestTokenExpiry = null;
-
-                        // Retry the request once
-                        if (retryCount > 0) {
-                            Logger.log('Token failed (401). Retrying request...');
-                            return this.#fetchWithRetry(videoId, retryCount - 1, signal); // Pass signal to retry
+            window.XMLHttpRequest.prototype.send = function () {
+                if (this._interceptUrl) {
+                    this.addEventListener('load', () => {
+                        if (this.responseText) {
+                            interceptHandler(this.responseText, this._interceptUrl);
                         }
-                        throw new Error('API request failed with status 401 (Retry exhausted)');
+                    });
+                }
+                originalXhrSend.apply(this, arguments);
+            };
+
+            // 2. Intercept Fetch
+            const originalFetch = window.fetch;
+            window.fetch = function (resource, init) {
+                const url = resource instanceof Request ? resource.url : typeof resource === 'string' ? resource : '';
+
+                if (isTargetApi(url)) {
+                    return originalFetch
+                        .apply(this, arguments)
+                        .then((response) => {
+                            // Clone the response to allow the original stream to be consumed
+                            const clonedResponse = response.clone();
+                            clonedResponse.text().then((text) => {
+                                interceptHandler(text, url);
+                            });
+                            return response; // Return the original response
+                        })
+                        .catch((error) => {
+                            // Log fetch errors only for the target API, reducing noise
+                            Logger.warn(`Target API fetch failed for ${url}:`, error);
+                            throw error; // Re-throw to not break the original request
+                        });
+                }
+                return originalFetch.apply(this, arguments);
+            };
+        }
+
+        /**
+         * Intercepts and parses API responses to cache video URLs.
+         * @param {string} responseText The raw response text from the API.
+         * @param {string} url The URL of the intercepted API request.
+         * @private
+         */
+        _interceptApiResponse(responseText, url) {
+            // Pre-filter: Ensure the response is a non-empty string that looks like JSON.
+            // This prevents errors from non-JSON responses.
+            if (!responseText || typeof responseText !== 'string' || !responseText.startsWith('{')) {
+                return;
+            }
+
+            try {
+                const data = JSON.parse(responseText);
+                // Check if the response contains the 'gifs' array we care about
+                if (data && Array.isArray(data.gifs)) {
+                    let count = 0;
+                    for (const gif of data.gifs) {
+                        // Use extractors from CONSTANTS
+                        const videoId = CONSTANTS.API_GIF_ID_EXTRACTOR(gif);
+                        const hdUrl = CONSTANTS.API_GIF_HD_URL_EXTRACTOR(gif);
+
+                        if (videoId && hdUrl) {
+                            if (!this.videoCache.has(videoId)) {
+                                this.videoCache.set(videoId, hdUrl);
+                                count++;
+                            }
+                        }
                     }
-                    // --- End 401 Retry Logic ---
 
-                    throw new Error(`API request failed with status ${response.status}`);
+                    // Log the API path on successful processing
+                    let path = '[Unknown Path]';
+                    try {
+                        // Extract just the pathname (e.g., /v2/feeds/...)
+                        path = new URL(url, document.baseURI).pathname;
+                    } catch (e) {
+                        // This should rarely happen as isTargetApi already validated the URL.
+                        Logger.warn(`Failed to parse URL path: ${url}`, e);
+                    }
+
+                    if (count > 0) {
+                        Logger.badge('CACHE UPDATED', LOG_STYLES.INFO, 'log', `[${path}] Added ${count} new items. Total: ${this.videoCache.size}`);
+                    } else {
+                        // Log even if no new items were added, to confirm the API path was hit
+                        Logger.badge('API HIT', LOG_STYLES.LOG, 'log', `[${path}] (No new items added. Cache total: ${this.videoCache.size})`);
+                    }
                 }
-
-                const responseData = await response.json();
-
-                return responseData;
+                // If 'data.gifs' does not exist (e.g., /v2/geolocation), silently do nothing.
             } catch (error) {
-                if (error.name === 'TimeoutError') {
-                    // Handle fetch timeout
-                    Logger.error(`Error fetching video info for ${videoId}:`, 'API request timed out');
-                    throw new Error('API request timed out');
-                }
-                if (error.name === 'AbortError') {
-                    // Handle manual cancellation
-                    Logger.log(`API request for ${videoId} was cancelled.`);
-                    throw error; // Re-throw AbortError to be caught by _handleDownloadClick
-                }
-                Logger.error(`Error fetching video info for ${videoId}:`, error);
-                // Rethrow the error to be handled by the caller.
-                throw error;
+                Logger.warn('Failed to parse API response:', error, responseText);
             }
         }
     }
@@ -931,6 +881,8 @@
                 [CONSTANTS.BUTTON_KEY.PREVIEW_OPEN]: this._handleOpenInNewTabClick.bind(this),
                 [CONSTANTS.BUTTON_KEY.PREVIEW_DOWNLOAD]: this._handleDownloadClick.bind(this),
             };
+
+            this.apiManager.setupInterceptors();
         }
 
         /**
@@ -1101,14 +1053,26 @@
             }, CONSTANTS.CANCEL_LOCK_DURATION);
 
             try {
-                // --- 2a. Execute Download (API Fetch and File Save) ---
-                await this._executeDownload(videoId, controller.signal);
+                // --- 2a. Check Cache ---
+                const cachedHdUrl = this.apiManager.getCachedHdUrl(videoId);
 
-                // --- 2b. Handle Success ---
-                this.ui.updateButtonState(button, 'SUCCESS');
-                this.ui.showToast('Download successful!', 'success');
+                if (cachedHdUrl) {
+                    // --- 2b. [Cache Hit] Execute Download ---
+                    Logger.badge('CACHE HIT', LOG_STYLES.LOG, 'log', `Starting download for ${videoId}`);
+                    await this._executeDownload(cachedHdUrl, videoId, controller.signal);
+
+                    // --- 2c. Handle Success ---
+                    this.ui.updateButtonState(button, 'SUCCESS');
+                    this.ui.showToast('Download successful!', 'success');
+                    Logger.log(`Downloaded ${videoId} from:`, cachedHdUrl);
+                } else {
+                    // --- 2d. [Cache Miss] Handle Failure ---
+                    Logger.warn(`HD URL not found in cache for ${videoId}.`);
+                    this.ui.showToast('HD URL not found in cache. (Try scrolling or refreshing)', 'error');
+                    this.ui.updateButtonState(button, 'ERROR');
+                }
             } catch (error) {
-                // --- 2c. Handle Errors (including AbortError) ---
+                // --- 2e. Handle Errors (including AbortError) ---
                 if (error.name === 'AbortError') {
                     // Handle cancellation specifically (when the promise rejects)
                     Logger.log(`Download process for ${videoId} was aborted.`); // Log may already exist from ApiManager
@@ -1137,22 +1101,17 @@
         }
 
         /**
-         * Performs the actual download process (API fetch and file save).
-         * This method does not handle UI state or user feedback.
-         * @param {string} videoId - The ID of the video to download.
+         * Performs the actual download process (file save).
+         * @param {string} hdUrl - The direct HD URL from the cache.
+         * @param {string} videoId - The ID of the video to download (for filename).
          * @param {AbortSignal} signal - The AbortSignal to cancel the fetch operations.
          * @returns {Promise<void>}
          * @private
          */
-        async _executeDownload(videoId, signal) {
+        async _executeDownload(hdUrl, videoId, signal) {
             // --- 2a. Get Video Info ---
-            const videoInfo = await this.apiManager.getVideoInfo(videoId, signal);
-            if (!videoInfo?.gif?.urls?.hd) {
-                throw new Error('Failed to get video info or HD URL.');
-            }
-
-            const downloadUrl = videoInfo.gif.urls.hd;
-            const filename = `${videoInfo.gif.id}${CONSTANTS.FILENAME_SUFFIX}`;
+            const downloadUrl = hdUrl; // Use URL from cache
+            const filename = `${videoId}${CONSTANTS.FILENAME_SUFFIX}`; // Use videoId for filename
             const safeFilename = filename.replace(/[\\/:*?"<>|]/g, '_'); // Sanitize filename
 
             // --- 2b. Download File ---
@@ -1201,6 +1160,15 @@
     if (ExecutionGuard.hasExecuted()) return;
     ExecutionGuard.setExecuted();
 
+    // 1. Instantiate controller immediately at document-start.
+    // The constructor sets up the API interceptors (XHR/Fetch).
     const app = new AppController();
-    app.init();
+
+    // 2. Defer the UI initialization (init()) until the DOM is ready, as UIManager and Sentinel need access to document.body.
+    if (document.readyState === 'loading') {
+        document.addEventListener('DOMContentLoaded', () => app.init());
+    } else {
+        // Already 'interactive' or 'complete'
+        app.init();
+    }
 })();
