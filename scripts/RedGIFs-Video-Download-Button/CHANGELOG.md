@@ -1,5 +1,12 @@
 # Changelog
 
+## [1.3.0] - 2025-11-02  
+- **Architectural Overhaul**: The script no longer makes its own API calls or uses guest tokens, it now relies entirely on the site’s authenticated requests.  
+  - **Compatibility Note**: This version's API interception method (which wraps `window.fetch` and `window.XMLHttpRequest`) may conflict with other userscripts that attempt to modify the same functions.
+- **Cache Miss Handling**: The script is now "cache-only" and removes the legacy API fallback. This is an intentional design choice to fully leverage the performance of the interception model. If a URL is not in the cache (e.g., a rare "fast click" race condition), the script will immediately show an error toast ("HD URL not found in cache..."), which self-corrects upon a second click.
+- **Instant Downloads:** HD video URLs are now pre-cached from the site’s own API, so downloads start immediately.  
+- Other internal code refactorings.
+
 ## [1.2.0] - 2025-10-31
 - Added
   - **Robust Authentication**: Implemented JWT token decoding to manage expiry (`exp`).

@@ -11,6 +11,9 @@ A collection of simple, single-purpose userscripts for various websites.
 
 ## Recent Updates
 
+### 2025/11/02
+- Updated `RedGIFs Video Download Button` (v1.2.0 -> v1.3.0)  
+
 ### 2025/10/31
 - Updated `RedGIFs Video Download Button` (v1.1.0 -> v1.2.0)  
 
@@ -54,11 +57,12 @@ This script enhances your RedGIFs experience by adding two convenient buttons to
 1.  **A download button** for one-click downloads of the HD version.
 2.  **An "Open in New Tab" button** to quickly view the video on its own page.
 
-> Please note: This script does not work on videos embedded on external sites, only on RedGIFs itself. There are no plans to add support for embedded videos.
+> This script modifies `window.fetch` and `window.XMLHttpRequest` and **may conflict with other userscripts that modify the same functions**.  
+> If downloads fail, please **temporarily disable all other userscripts active on RedGIFs** to determine if the cause is **a script conflict** or **a recent site update**.
 
 | Platform | GitHub | Greasy Fork | Version | Last Updated | Changelog |
 | :--- | :--- | :--- | :--- | :--- | :--- |
-| **RedGifs** | [![Download](https://img.shields.io/badge/Download-blue?style=flat-square&logo=download)](https://raw.githubusercontent.com/p65536/Userscripts-Collection/main/scripts/RedGIFs-Video-Download-Button/RedGIFs-Video-Download-Button.user.js) | [![Greasy Fork](https://img.shields.io/badge/Install-green?style=flat-square&logo=greasyfork)](https://greasyfork.org/en/scripts/545472-redgifs-video-download-button) | 1.2.0 | 2025/10/31 | [View](./scripts/RedGIFs-Video-Download-Button/CHANGELOG.md) |
+| **RedGifs** | [![Download](https://img.shields.io/badge/Download-blue?style=flat-square&logo=download)](https://raw.githubusercontent.com/p65536/Userscripts-Collection/main/scripts/RedGIFs-Video-Download-Button/RedGIFs-Video-Download-Button.user.js) | [![Greasy Fork](https://img.shields.io/badge/Install-green?style=flat-square&logo=greasyfork)](https://greasyfork.org/en/scripts/545472-redgifs-video-download-button) | 1.3.0 | 2025/11/2 | [View](./scripts/RedGIFs-Video-Download-Button/CHANGELOG.md) |
 
 ---
 
