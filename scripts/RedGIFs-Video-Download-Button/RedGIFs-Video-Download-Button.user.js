@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         RedGIFs Video Download Button
 // @namespace    https://github.com/p65536
-// @version      1.3.0
+// @version      1.4.0
 // @license      MIT
 // @description  Adds a download button (for one-click HD downloads) and an "Open in New Tab" button to each video on the RedGIFs site.
 // @icon         https://www.redgifs.com/favicon.ico
@@ -236,9 +236,14 @@
         .${APPID}-toast-error { background-color: rgb(220, 53, 69); }
         .${APPID}-toast-info { background-color: rgb(23, 162, 184); }
 
-        /* Hide Ad Containers */
-        .GifPreview.VisibleOnly {
-            display: none !important;
+        /* Mobile: Adjust button position to avoid overlapping native UI */
+        .App.phone .${APPID}-preview-open-btn {
+            /* Offset by toolbar height (assumed 56px) + 8px original top */
+            top: 64px; 
+        }
+        .App.phone .${APPID}-preview-download-btn {
+            /* Offset by toolbar height (assumed 56px) + 44px original top */
+            top: 100px;
         }
 
         /* Keyframes */
@@ -567,11 +572,23 @@
 
             try {
                 const data = JSON.parse(responseText);
-                // Check if the response contains the 'gifs' array we care about
+
+                // Handle both single 'gif' object (watch page) and 'gifs' array (feeds)
+                const gifsToProcess = [];
                 if (data && Array.isArray(data.gifs)) {
+                    gifsToProcess.push(...data.gifs);
+                }
+                // Also check for the single 'gif' object
+                if (data && data.gif && typeof data.gif === 'object') {
+                    gifsToProcess.push(data.gif);
+                }
+
+                // Check if we have any gifs to process
+                if (gifsToProcess.length > 0) {
                     let count = 0;
-                    for (const gif of data.gifs) {
+                    for (const gif of gifsToProcess) {
                         // Use extractors from CONSTANTS
+                        // Extractors are null-safe (e.g., gif?.id)
                         const videoId = CONSTANTS.API_GIF_ID_EXTRACTOR(gif);
                         const hdUrl = CONSTANTS.API_GIF_HD_URL_EXTRACTOR(gif);
 
@@ -600,7 +617,7 @@
                         Logger.badge('API HIT', LOG_STYLES.LOG, 'log', `[${path}] (No new items added. Cache total: ${this.videoCache.size})`);
                     }
                 }
-                // If 'data.gifs' does not exist (e.g., /v2/geolocation), silently do nothing.
+                // If no gifs found (e.g., /v2/geolocation), silently do nothing.
             } catch (error) {
                 Logger.warn('Failed to parse API response:', error, responseText);
             }
@@ -615,9 +632,21 @@
         constructor() {
             /** @type {HTMLElement|null} */
             this.toastContainer = null;
+        }
 
-            this._injectStyles();
+        /**
+         * Initializes the UI components that require the DOM.
+         * Creates and appends the toast container to the document body.
+         */
+        init() {
             this._createToastContainer();
+        }
+
+        /**
+         * Injects the necessary CSS styles for the script's UI into the document's head.
+         */
+        injectStyles() {
+            this._injectStyles();
         }
 
         /**
@@ -745,6 +774,103 @@
     }
 
     // =================================================================================
+    // SECTION: Annoyance Manager
+    // =================================================================================
+
+    class AnnoyanceManager {
+        /**
+         * @private
+         * @static
+         * @const {string}
+         */
+        static STYLES = `
+                /* --- RGVDB Annoyance Removal --- */
+
+                /* Header: Link button to external site (Desktop) */
+                .topNav .aTab {
+                    display: none !important;
+                }
+
+                /* Information Bar (Top Banner) */
+                .InformationBar {
+                    display: none !important;
+                }
+
+                /* Ad Containers (:has() dependent) */
+                .sideBarItem:has(.liveAdButton) {
+                    display: none !important;
+                }
+
+                /* Feed Injections (Trending Niches/Creators, Ads, etc.) */
+                .injection {
+                    display: none !important;
+                }
+
+                /* Sidebar: OnlyFans Creators (Desktop) */
+                /* Use visibility:hidden to hide without affecting layout (prevents center feed shift) */
+                .OnlyFansCreatorsSidebar {
+                    visibility: hidden !important;
+                }
+            `;
+
+        /**
+         * Injects the annoyance removal CSS into the document's head.
+         */
+        injectStyles() {
+            const styleElement = h('style', { type: 'text/css', 'data-owner': `${APPID}-annoyances` }, AnnoyanceManager.STYLES);
+            document.head.appendChild(styleElement);
+        }
+
+        /**
+         * Registers Sentinel observers to hide elements that cannot be hidden by CSS alone.
+         * @param {Sentinel} sentinel - The Sentinel instance.
+         */
+        removeElements(sentinel) {
+            // --- Developer Note: Platform Detection ---
+            // This logic determines the platform (phone/desktop) ONCE on page load.
+            // It intentionally does NOT handle dynamic platform switching because the site itself does not support it (at least for now).
+            //
+            // TO TEST MOBILE ON DESKTOP: Enable device emulation in DevTools AND THEN reload the page.
+            // ---
+
+            let platformDetermined = false;
+
+            const adHider = (adElement) => {
+                const adContainer = adElement.closest('.GifPreview.VisibleOnly');
+                if (adContainer) {
+                    // Do NOT use .remove() as it breaks the site's virtual DOM state, causing black screens on navigation.
+                    // Instead, apply an inline !important style to win the CSS specificity war.
+                    adContainer.style.setProperty('display', 'none', 'important');
+                }
+            };
+
+            // Define listener callbacks so they can be unregistered later.
+            const onPhoneFound = () => {
+                if (platformDetermined) return;
+                platformDetermined = true;
+                Logger.badge('PLATFORM', LOG_STYLES.INFO, 'log', 'Mobile platform detected');
+                sentinel.on('[data-videoads="adsVideo"]', adHider);
+                // Unregister the other platform watcher
+                sentinel.off('.App.desktop', onDesktopFound);
+            };
+
+            const onDesktopFound = () => {
+                if (platformDetermined) return;
+                platformDetermined = true;
+                Logger.badge('PLATFORM', LOG_STYLES.INFO, 'log', 'Desktop platform detected');
+                sentinel.on('[class*="_StreamateCamera_"]', adHider);
+                // Unregister the other platform watcher
+                sentinel.off('.App.phone', onPhoneFound);
+            };
+
+            // Rely on Sentinel to detect the platform class when it appears.
+            Logger.badge('PLATFORM', LOG_STYLES.INFO, 'log', 'Awaiting platform detection...');
+            sentinel.on('.App.phone', onPhoneFound);
+            sentinel.on('.App.desktop', onDesktopFound);
+        }
+    }
+
+    // =================================================================================
     // SECTION: Sentinel (DOM Node Insertion Observer)
     // =================================================================================
 
@@ -867,7 +993,9 @@
             /** @type {ApiManager} */
             this.apiManager = new ApiManager();
             /** @type {UIManager} */
-            this.ui = null;
+            this.ui = new UIManager();
+            /** @type {AnnoyanceManager} */
+            this.annoyanceManager = new AnnoyanceManager();
             /** @type {Map<string, AbortController>} */
             this.activeDownloads = new Map();
 
@@ -889,10 +1017,19 @@
          * Initializes the script.
          */
         init() {
-            // Instantiate the UI Manager
-            this.ui = new UIManager();
+            // 1. Inject annoyance removal styles
+            this.annoyanceManager.injectStyles();
+
+            // 2. Inject script UI (buttons, toast) styles
+            this.ui.injectStyles();
+
+            // 3. Initialize UI components (toast container)
+            this.ui.init();
 
             const sentinel = new Sentinel(OWNERID);
+
+            // 4. Register JS-based annoyance removal
+            this.annoyanceManager.removeElements(sentinel);
 
             /**
              * Registers a Sentinel observer and immediately scans for existing elements (safety net).
