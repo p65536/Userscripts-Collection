@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         RedGIFs Video Download Button
 // @namespace    https://github.com/p65536
-// @version      1.4.0
+// @version      1.4.1
 // @license      MIT
 // @description  Adds a download button (for one-click HD downloads) and an "Open in New Tab" button to each video on the RedGIFs site.
 // @icon         https://www.redgifs.com/favicon.ico
@@ -803,6 +803,15 @@
 
                 /* Feed Injections (Trending Niches/Creators, Ads, etc.) */
                 .injection {
+                    display: none !important;
+                }
+
+                /* Feed Modules (Suggested/Trending Niches, Suggested/Trending Creators, Mobile OF Creators, Niche Explorer) */
+                .FeedModule:has(.nicheListWidget.trendingNiches),
+                .FeedModule:has(.seeMoreBlock.suggestedCreators),
+                .FeedModule:has(.seeMoreBlock.trendingCreators),
+                .FeedModule:has(.OnlyFansCreatorsModule),
+                .FeedModule:has(.nicheExplorer) {
                     display: none !important;
                 }
 
