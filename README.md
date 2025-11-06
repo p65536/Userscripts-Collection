@@ -11,6 +11,9 @@ A collection of simple, single-purpose userscripts for various websites.
 
 ## Recent Updates
 
+### 2025/11/06
+- Updated `RedGIFs Video Download Button` (v1.4.0 -> v1.4.1)  
+
 ### 2025/11/03
 - Updated `RedGIFs Video Download Button` (v1.3.0 -> v1.4.0)  
 
@@ -24,14 +27,6 @@ A collection of simple, single-purpose userscripts for various websites.
 - Updated `YouTube UI Customizer` (v1.1.1 -> v1.1.2)  
 - Updated `YouTube UI Customizer` (v1.1.0 -> v1.1.1)  
 - Updated `YouTube UI Customizer` (v1.0.0 -> v1.1.0)  
-
-### 2025/10/24
-- Updated `RedGIFs Video Download Button` (v1.0.1 -> v1.1.0)  
-  > Added an "Open in New Tab" button, moved the download button for better access, and improved performance.
-
-- Updated `RedGIFs Video Download Button` (v1.0.0 -> v1.0.1)  
-  > Quick patch for site structure changes.
-  > Please bear with the visual clumsiness.
 
 ---
 
@@ -62,12 +57,20 @@ This script enhances your RedGIFs experience by adding two convenient buttons to
 
 It also includes a powerful **Annoyance & Ad Remover** to clean up the UI.
 
-> This script modifies `window.fetch` and `window.XMLHttpRequest` and **may conflict with other userscripts that modify the same functions**.  
-> If downloads fail, please **temporarily disable all other userscripts active on RedGIFs** to determine if the cause is **a script conflict** or **a recent site update**.
+> A Note on This Feature:
+> 
+> Please consider the Annoyance & Ad Removal a "best-effort" bonus feature. The script's core purpose remains the `Download` and `Open in New Tab` buttons.
+> 
+> This feature is tuned for the current RedGIFs site layout (as of 2025/11/06), and future site updates will likely break parts of the removal logic. While I will try to keep it functional, please understand that ongoing maintenance for this specific feature is not guaranteed, as it is secondary to the script's main functionality.
 
 | Platform | GitHub | Greasy Fork | Version | Last Updated | Changelog |
 | :--- | :--- | :--- | :--- | :--- | :--- |
-| **RedGifs** | [![Download](https://img.shields.io/badge/Download-blue?style=flat-square&logo=download)](https://raw.githubusercontent.com/p65536/Userscripts-Collection/main/scripts/RedGIFs-Video-Download-Button/RedGIFs-Video-Download-Button.user.js) | [![Greasy Fork](https://img.shields.io/badge/Install-green?style=flat-square&logo=greasyfork)](https://greasyfork.org/en/scripts/545472-redgifs-video-download-button) | 1.4.0 | 2025/11/3 | [View](./scripts/RedGIFs-Video-Download-Button/CHANGELOG.md) |
+| **RedGifs** | [![Download](https://img.shields.io/badge/Download-blue?style=flat-square&logo=download)](https://raw.githubusercontent.com/p65536/Userscripts-Collection/main/scripts/RedGIFs-Video-Download-Button/RedGIFs-Video-Download-Button.user.js) | [![Greasy Fork](https://img.shields.io/badge/Install-green?style=flat-square&logo=greasyfork)](https://greasyfork.org/en/scripts/545472-redgifs-video-download-button) | 1.4.1 | 2025/11/6 | [View](./scripts/RedGIFs-Video-Download-Button/CHANGELOG.md) |
+
+##### Potential Conflict Warning (v1.3.0 and later)
+
+> This script modifies `window.fetch` and `window.XMLHttpRequest` and **may conflict with other userscripts that modify the same functions**.  
+> If downloads fail, please **temporarily disable all other userscripts active on RedGIFs** to determine if the cause is **a script conflict** or **a recent site update**.
 
 ---
 

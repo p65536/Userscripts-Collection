@@ -1,5 +1,15 @@
 # Changelog
 
+## [1.4.1] - 2025-11-06
+- **Feat: Expanded annoyance blocking for in-feed modules.**
+  - Added new CSS rules to `AnnoyanceManager` to hide suggested/promotional content blocks that appear within the video feeds.
+  - These rules apply across desktop and mobile, covering the "For You", "Trending", and "Niches" pages.
+  - **Hides the following modules:**
+    - "Suggested Niches" / "Trending Niches"
+    - "Suggested Creators" / "Trending Creators"
+    - "Onlyfans creators" (mobile feed)
+    - "Niches you might also like" (on niche-specific pages)
+
 ## [1.4.0] - 2025-11-03
 - **Feat: Introduced `AnnoyanceManager` to block site ads and clutter.**
   - This version adds a dedicated module for managing annoyances, moving all logic out of the main style definitions.
