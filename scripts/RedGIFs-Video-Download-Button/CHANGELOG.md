@@ -1,5 +1,9 @@
 # Changelog
 
+## [1.4.2] - 2025-11-07
+- **Feat: Added blocking for in-feed "Boosted" ads.**
+  - Hides the ad containers that contain `.metaInfo_isBoosted`.
+
 ## [1.4.1] - 2025-11-06
 - **Feat: Expanded annoyance blocking for in-feed modules.**
   - Added new CSS rules to `AnnoyanceManager` to hide suggested/promotional content blocks that appear within the video feeds.
