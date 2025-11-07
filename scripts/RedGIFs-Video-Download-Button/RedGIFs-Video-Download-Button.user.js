@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         RedGIFs Video Download Button
 // @namespace    https://github.com/p65536
-// @version      1.4.1
+// @version      1.4.2
 // @license      MIT
 // @description  Adds a download button (for one-click HD downloads) and an "Open in New Tab" button to each video on the RedGIFs site.
 // @icon         https://www.redgifs.com/favicon.ico
@@ -831,10 +831,13 @@
         }
 
         /**
-         * Registers Sentinel observers to hide elements that cannot be hidden by CSS alone.
+         * Registers Sentinel observers to hide elements that cannot be hidden by CSS alone or require dynamic content injection.
          * @param {Sentinel} sentinel - The Sentinel instance.
          */
         removeElements(sentinel) {
+            // --- Section: Platform-Specific Dynamic Ad Hiding ---
+            // This logic detects the platform (phone/desktop) once on load and registers the appropriate ad hider for that platform.
+
             // --- Developer Note: Platform Detection ---
             // This logic determines the platform (phone/desktop) ONCE on page load.
             // It intentionally does NOT handle dynamic platform switching because the site itself does not support it (at least for now).
@@ -876,6 +879,17 @@
             Logger.badge('PLATFORM', LOG_STYLES.INFO, 'log', 'Awaiting platform detection...');
             sentinel.on('.App.phone', onPhoneFound);
             sentinel.on('.App.desktop', onDesktopFound);
+
+            // --- Section: General Annoyance Hiding ---
+            // These are platform-independent rules that simply hide specific elements.
+
+            // Handle Boosted Ad Posts
+            sentinel.on('.metaInfo_isBoosted', (infoElement) => {
+                const container = infoElement.closest('.GifPreview');
+                if (container) {
+                    container.style.setProperty('display', 'none', 'important');
+                }
+            });
         }
     }
 
