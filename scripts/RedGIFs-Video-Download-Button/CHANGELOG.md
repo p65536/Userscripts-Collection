@@ -1,5 +1,14 @@
 # Changelog
 
+## [1.5.0] - 2025-11-08
+- **Refactor: Changed API interception method from `XHR/Fetch` to `JSON.parse`.**
+  - This is a major internal refactor to improve **resilience** against future site updates (e.g., changes to their internal API structure, or moves to gRPC/WebSocket).
+  - The script is now less likely to break when the site updates its network request methods, as it monitors the data *after* it has been fetched.
+- **Perf: Simplified DOM initialization logic.**
+  - Removed a redundant "safety net" scan (`querySelectorAll`) during page load. Testing confirmed the primary `Sentinel` (CSS animation observer) is fully reliable for detecting existing elements.
+- **Chore: Internal code cleanup and documentation.**
+  - Improved JSDoc comments, type definitions, and encapsulated API logic within the `ApiManager` for better maintainability.
+
 ## [1.4.2] - 2025-11-07
 - **Feat: Added blocking for in-feed "Boosted" ads.**
   - Hides the ad containers that contain `.metaInfo_isBoosted`.
