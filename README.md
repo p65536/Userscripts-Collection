@@ -73,10 +73,10 @@ It also includes a powerful **Annoyance & Ad Remover** to clean up the UI.
 | :--- | :--- | :--- | :--- | :--- | :--- |
 | **RedGifs** | [![Download](https://img.shields.io/badge/Download-blue?style=flat-square&logo=download)](https://raw.githubusercontent.com/p65536/Userscripts-Collection/main/scripts/RedGIFs-Video-Download-Button/RedGIFs-Video-Download-Button.user.js) | [![Greasy Fork](https://img.shields.io/badge/Install-green?style=flat-square&logo=greasyfork)](https://greasyfork.org/en/scripts/545472-redgifs-video-download-button) | 1.5.0 | 2025/11/8 | [View](./scripts/RedGIFs-Video-Download-Button/CHANGELOG.md) |
 
-##### Potential Conflict Warning (v1.3.0 and later)
+##### Potential Conflict Warning
 
-> This script modifies `window.fetch` and `window.XMLHttpRequest` and **may conflict with other userscripts that modify the same functions**.  
-> If downloads fail, please **temporarily disable all other userscripts active on RedGIFs** to determine if the cause is **a script conflict** or **a recent site update**.
+> This script modifies the global `JSON.parse` function and **may conflict with other userscripts that modify the same function**.  
+> If you experience page errors or downloads failing, please **temporarily disable all other userscripts active on RedGIFs** to determine if the cause is **a script conflict** or **a recent site update**.
 
 ---
 
