@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         RedGIFs Video Download Button
 // @namespace    https://github.com/p65536
-// @version      1.4.2
+// @version      1.5.0
 // @license      MIT
 // @description  Adds a download button (for one-click HD downloads) and an "Open in New Tab" button to each video on the RedGIFs site.
 // @icon         https://www.redgifs.com/favicon.ico
@@ -32,25 +32,6 @@
         TOAST_FADE_OUT_DURATION: 300,
         ICON_REVERT_DELAY: 2000,
         CANCEL_LOCK_DURATION: 600, // (ms) Duration to lock download button to prevent mis-click cancel
-
-        // --- API Data Extractors ---
-        API_TARGET_HOST: 'api.redgifs.com',
-        API_TARGET_PATH_PREFIX: '/v2/',
-
-        /**
-         * Extracts the video ID from a 'gif' object in the API response.
-         * @param {object} gif - The gif object from the API.
-         * @returns {string|undefined} The video ID.
-         */
-        API_GIF_ID_EXTRACTOR: (gif) => gif?.id,
-
-        /**
-         * Extracts the HD video URL from a 'gif' object in the API response.
-         * @param {object} gif - The gif object from the API.
-         * @returns {string|undefined} The HD URL.
-         */
-        API_GIF_HD_URL_EXTRACTOR: (gif) => gif?.urls?.hd,
-        // ---------------------------
 
         // --- Button configurations ---
         /**
@@ -430,8 +411,8 @@
 
         const fragment = document.createDocumentFragment();
         /**
-         *
-         * @param child
+         * Appends a child node or text to the document fragment.
+         * @param {HChild} child - The child to append.
          */
         function append(child) {
             if (child === null || child === false || typeof child === 'undefined') return;
@@ -476,9 +457,24 @@
     // =================================================================================
 
     class ApiManager {
+        /**
+         * Extracts the video ID from a 'gif' object in the API response.
+         * @param {object} gif - The gif object from the API.
+         * @returns {string|undefined} The video ID.
+         */
+        static #API_GIF_ID_EXTRACTOR = (gif) => gif?.id;
+
+        /**
+         * Extracts the HD video URL from a 'gif' object in the API response.
+         * @param {object} gif - The gif object from the API.
+         * @returns {string|undefined} The HD URL.
+         */
+        static #API_GIF_HD_URL_EXTRACTOR = (gif) => gif?.urls?.hd;
+
         constructor() {
             /** @type {Map<string, string>} */
             this.videoCache = new Map();
+            this._initJsonInterceptor();
         }
 
         /**
@@ -491,88 +487,42 @@
         }
 
         /**
-         * Sets up XHR and Fetch interceptors to capture API responses.
+         * Sets up JSON.parse interceptor to capture API responses.
+         * @private
          */
-        setupInterceptors() {
-            const interceptHandler = this._interceptApiResponse.bind(this);
+        _initJsonInterceptor() {
+            const originalJsonParse = JSON.parse;
+            const self = this; // Preserve ApiManager instance for use in the closure
 
-            /**
-             * Checks if a given URL matches the target API criteria.
-             * @param {string} urlString The URL to check.
-             * @returns {boolean} True if the URL should be intercepted.
-             */
-            const isTargetApi = (urlString) => {
+            JSON.parse = function (text, reviver) {
+                // Pass through to the original parser first
+                const result = originalJsonParse.call(this, text, reviver);
+
                 try {
-                    // Use document.baseURI as a base for relative URLs
-                    const url = new URL(urlString, document.baseURI);
-                    return url.hostname === CONSTANTS.API_TARGET_HOST && url.pathname.startsWith(CONSTANTS.API_TARGET_PATH_PREFIX);
-                } catch {
-                    return false; // Invalid URL
-                }
-            };
-
-            // 1. Intercept XMLHttpRequest
-            const originalXhrOpen = window.XMLHttpRequest.prototype.open;
-            const originalXhrSend = window.XMLHttpRequest.prototype.send;
-
-            window.XMLHttpRequest.prototype.open = function (method, url) {
-                this._interceptUrl = typeof url === 'string' && isTargetApi(url) ? url : null;
-                originalXhrOpen.apply(this, arguments);
-            };
-
-            window.XMLHttpRequest.prototype.send = function () {
-                if (this._interceptUrl) {
-                    this.addEventListener('load', () => {
-                        if (this.responseText) {
-                            interceptHandler(this.responseText, this._interceptUrl);
+                    // 1. Check if the result is an object
+                    if (result && typeof result === 'object') {
+                        // 2. Check for the specific keys we care about (result.gifs or result.gif)
+                        if (Array.isArray(result.gifs) || (result.gif && typeof result.gif === 'object')) {
+                            // 3. If it matches, process the data
+                            self._processApiData(result);
                         }
-                    });
+                    }
+                } catch (error) {
+                    Logger.error('Error during JSON.parse interception:', error, result);
                 }
-                originalXhrSend.apply(this, arguments);
-            };
 
-            // 2. Intercept Fetch
-            const originalFetch = window.fetch;
-            window.fetch = function (resource, init) {
-                const url = resource instanceof Request ? resource.url : typeof resource === 'string' ? resource : '';
-
-                if (isTargetApi(url)) {
-                    return originalFetch
-                        .apply(this, arguments)
-                        .then((response) => {
-                            // Clone the response to allow the original stream to be consumed
-                            const clonedResponse = response.clone();
-                            clonedResponse.text().then((text) => {
-                                interceptHandler(text, url);
-                            });
-                            return response; // Return the original response
-                        })
-                        .catch((error) => {
-                            // Log fetch errors only for the target API, reducing noise
-                            Logger.warn(`Target API fetch failed for ${url}:`, error);
-                            throw error; // Re-throw to not break the original request
-                        });
-                }
-                return originalFetch.apply(this, arguments);
+                // Always return the original result
+                return result;
             };
         }
 
         /**
-         * Intercepts and parses API responses to cache video URLs.
-         * @param {string} responseText The raw response text from the API.
-         * @param {string} url The URL of the intercepted API request.
+         * Processes the parsed API data to cache video URLs.
+         * @param {object} data The parsed JSON data from the API.
          * @private
          */
-        _interceptApiResponse(responseText, url) {
-            // Pre-filter: Ensure the response is a non-empty string that looks like JSON.
-            // This prevents errors from non-JSON responses.
-            if (!responseText || typeof responseText !== 'string' || !responseText.startsWith('{')) {
-                return;
-            }
-
+        _processApiData(data) {
             try {
-                const data = JSON.parse(responseText);
-
                 // Handle both single 'gif' object (watch page) and 'gifs' array (feeds)
                 const gifsToProcess = [];
                 if (data && Array.isArray(data.gifs)) {
@@ -587,10 +537,10 @@
                 if (gifsToProcess.length > 0) {
                     let count = 0;
                     for (const gif of gifsToProcess) {
-                        // Use extractors from CONSTANTS
+                        // Use internal static extractors
                         // Extractors are null-safe (e.g., gif?.id)
-                        const videoId = CONSTANTS.API_GIF_ID_EXTRACTOR(gif);
-                        const hdUrl = CONSTANTS.API_GIF_HD_URL_EXTRACTOR(gif);
+                        const videoId = ApiManager.#API_GIF_ID_EXTRACTOR(gif);
+                        const hdUrl = ApiManager.#API_GIF_HD_URL_EXTRACTOR(gif);
 
                         if (videoId && hdUrl) {
                             if (!this.videoCache.has(videoId)) {
@@ -600,26 +550,19 @@
                         }
                     }
 
-                    // Log the API path on successful processing
-                    let path = '[Unknown Path]';
-                    try {
-                        // Extract just the pathname (e.g., /v2/feeds/...)
-                        path = new URL(url, document.baseURI).pathname;
-                    } catch (e) {
-                        // This should rarely happen as isTargetApi already validated the URL.
-                        Logger.warn(`Failed to parse URL path: ${url}`, e);
-                    }
+                    // Log on successful processing
+                    const path = '[JSON_PARSE]';
 
                     if (count > 0) {
-                        Logger.badge('CACHE UPDATED', LOG_STYLES.INFO, 'log', `[${path}] Added ${count} new items. Total: ${this.videoCache.size}`);
+                        Logger.badge('CACHE UPDATED', LOG_STYLES.INFO, 'log', `${path} Added ${count} new items. Total: ${this.videoCache.size}`);
                     } else {
-                        // Log even if no new items were added, to confirm the API path was hit
-                        Logger.badge('API HIT', LOG_STYLES.LOG, 'log', `[${path}] (No new items added. Cache total: ${this.videoCache.size})`);
+                        // Log if the feed contained items, but all were already cached.
+                        Logger.badge('API HIT', LOG_STYLES.LOG, 'log', `${path} (No new items added. Cache total: ${this.videoCache.size})`);
                     }
                 }
-                // If no gifs found (e.g., /v2/geolocation), silently do nothing.
+                // If no gifs found (e.g., an empty feed or non-media API response), silently do nothing.
             } catch (error) {
-                Logger.warn('Failed to parse API response:', error, responseText);
+                Logger.warn('Failed to process API data object:', error, data);
             }
         }
     }
@@ -1032,8 +975,6 @@
                 [CONSTANTS.BUTTON_KEY.PREVIEW_OPEN]: this._handleOpenInNewTabClick.bind(this),
                 [CONSTANTS.BUTTON_KEY.PREVIEW_DOWNLOAD]: this._handleDownloadClick.bind(this),
             };
-
-            this.apiManager.setupInterceptors();
         }
 
         /**
@@ -1055,19 +996,12 @@
             this.annoyanceManager.removeElements(sentinel);
 
             /**
-             * Registers a Sentinel observer and immediately scans for existing elements (safety net).
-             * @param {string} selector The CSS selector to observe and scan.
+             * Registers a Sentinel observer.
+             * @param {string} selector The CSS selector to observe.
              * @param {(element: Element) => void} handler The callback handler for found elements.
              */
             const registerObserver = (selector, handler) => {
-                // 1. Observe future elements
                 sentinel.on(selector, handler);
-                // 2. Safety net: Scan for existing elements
-                try {
-                    document.querySelectorAll(selector).forEach(handler);
-                } catch (e) {
-                    Logger.error(`Error scanning existing elements for selector: ${selector}`, e);
-                }
             };
 
             // Set up the listener using Sentinel.
@@ -1235,7 +1169,7 @@
                 // --- 2e. Handle Errors (including AbortError) ---
                 if (error.name === 'AbortError') {
                     // Handle cancellation specifically (when the promise rejects)
-                    Logger.log(`Download process for ${videoId} was aborted.`); // Log may already exist from ApiManager
+                    Logger.log(`Download process for ${videoId} was aborted.`);
                     this.ui.showToast('Download cancelled.', 'info');
                     // Button state should be reset by the click handler that initiated the abort
                     // If the abort happened for other reasons (e.g., page navigation), this ensures cleanup
@@ -1247,7 +1181,6 @@
                     // Handle all other errors (API, Download, Network, 404, Token, Timeout, etc.) uniformly
                     Logger.error('Download failed:', error); // Keep existing detailed log for developer
 
-                    // <-- Add line breaks (\n) for readability -->
                     const userErrorMessage = 'Download failed. Site update possible?';
 
                     this.ui.showToast(userErrorMessage, 'error'); // Show unified message to user
@@ -1321,7 +1254,7 @@
     ExecutionGuard.setExecuted();
 
     // 1. Instantiate controller immediately at document-start.
-    // The constructor sets up the API interceptors (XHR/Fetch).
+    // The constructor sets up the JSON.parse interceptor.
     const app = new AppController();
 
     // 2. Defer the UI initialization (init()) until the DOM is ready, as UIManager and Sentinel need access to document.body.
