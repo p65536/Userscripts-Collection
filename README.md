@@ -44,6 +44,8 @@ This section lists the userscripts available in this collection.
 
 A script that enhances your YouTube experience. You can customize the video grid layout by adjusting thumbnails per row, completely hide Shorts content, and automatically redirect the Shorts player to the standard video player.
 
+> Note: This script is designed specifically for the **desktop** YouTube site (www.youtube.com) and does not support the mobile version (m.youtube.com).
+
 #### Getting Started
 
 After installing the script, a new settings icon  will appear at the top right of the YouTube page.  
