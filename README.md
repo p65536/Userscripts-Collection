@@ -11,28 +11,14 @@ A collection of simple, single-purpose userscripts for various websites.
 
 ## Recent Updates
 
+### 2025/11/16
+- Updated `RedGIFs Video Download Button` (v1.5.0 -> v1.6.0)  
+
 ### 2025/11/08
 - Updated `RedGIFs Video Download Button` (v1.4.2 -> v1.5.0)  
 
 ### 2025/11/07
 - Updated `RedGIFs Video Download Button` (v1.4.1 -> v1.4.2)  
-
-### 2025/11/06
-- Updated `RedGIFs Video Download Button` (v1.4.0 -> v1.4.1)  
-
-### 2025/11/03
-- Updated `RedGIFs Video Download Button` (v1.3.0 -> v1.4.0)  
-
-### 2025/11/02
-- Updated `RedGIFs Video Download Button` (v1.2.0 -> v1.3.0)  
-
-### 2025/10/31
-- Updated `RedGIFs Video Download Button` (v1.1.0 -> v1.2.0)  
-
-### 2025/10/25
-- Updated `YouTube UI Customizer` (v1.1.1 -> v1.1.2)  
-- Updated `YouTube UI Customizer` (v1.1.0 -> v1.1.1)  
-- Updated `YouTube UI Customizer` (v1.0.0 -> v1.1.0)  
 
 ---
 
@@ -73,7 +59,7 @@ It also includes a powerful **Annoyance & Ad Remover** to clean up the UI.
 
 | Platform | GitHub | Greasy Fork | Version | Last Updated | Changelog |
 | :--- | :--- | :--- | :--- | :--- | :--- |
-| **RedGifs** | [![Download](https://img.shields.io/badge/Download-blue?style=flat-square&logo=download)](https://raw.githubusercontent.com/p65536/Userscripts-Collection/main/scripts/RedGIFs-Video-Download-Button/RedGIFs-Video-Download-Button.user.js) | [![Greasy Fork](https://img.shields.io/badge/Install-green?style=flat-square&logo=greasyfork)](https://greasyfork.org/en/scripts/545472-redgifs-video-download-button) | 1.5.0 | 2025/11/8 | [View](./scripts/RedGIFs-Video-Download-Button/CHANGELOG.md) |
+| **RedGifs** | [![Download](https://img.shields.io/badge/Download-blue?style=flat-square&logo=download)](https://raw.githubusercontent.com/p65536/Userscripts-Collection/main/scripts/RedGIFs-Video-Download-Button/RedGIFs-Video-Download-Button.user.js) | [![Greasy Fork](https://img.shields.io/badge/Install-green?style=flat-square&logo=greasyfork)](https://greasyfork.org/en/scripts/545472-redgifs-video-download-button) | 1.6.0 | 2025/11/16 | [View](./scripts/RedGIFs-Video-Download-Button/CHANGELOG.md) |
 
 ##### Potential Conflict Warning
 
@@ -86,6 +72,19 @@ It also includes a powerful **Annoyance & Ad Remover** to clean up the UI.
 
 1.  Please install [Tampermonkey](https://www.tampermonkey.net/) or any userscript management tool in your browser.
 2.  Click the "Download" or "Install" link for the script you wish to use.
+
+## Updating
+
+Open the script to be updated in the Tampermonkey dashboard and **replace the entire content** with the latest version, then save. (The Greasy Fork version updates automatically).
+
+## Tested Environment
+
+- These scripts are primarily developed and tested on **Firefox** with **Tampermonkey**.
+- It is also confirmed to work on Chromium-based browsers, but testing on these platforms is less extensive.
+- They are developed for **desktop browsers**.
+- They have **not** been tested on actual mobile devices, so functionality on mobile browsers is unknown.
+
+---
 
 ## License
 

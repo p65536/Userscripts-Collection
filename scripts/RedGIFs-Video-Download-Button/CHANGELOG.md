@@ -1,5 +1,15 @@
 # Changelog
 
+## [1.6.0] - 2025-11-16
+- **Feat: Added download button directly to video thumbnails.**
+  - A download button (identical in function to the preview button) is now added to all video tiles in grid/feed views.
+  - This allows for one-click downloading without needing to open the video preview first.
+- **Feat: Improved download error reporting.**
+  - Error messages are now more specific. The script will distinguish between:
+    - **404 Not Found** (e.g., video was deleted)
+    - **403 Forbidden** (e.g., access was denied)
+    - **Other Errors** (e.g., network failure or site update)
+
 ## [1.5.0] - 2025-11-08
 - **Refactor: Changed API interception method from `XHR/Fetch` to `JSON.parse`.**
   - This is a major internal refactor to improve **resilience** against future site updates (e.g., changes to their internal API structure, or moves to gRPC/WebSocket).
