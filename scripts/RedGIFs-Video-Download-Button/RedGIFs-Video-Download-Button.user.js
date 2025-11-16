@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         RedGIFs Video Download Button
 // @namespace    https://github.com/p65536
-// @version      1.5.0
+// @version      1.6.0
 // @license      MIT
 // @description  Adds a download button (for one-click HD downloads) and an "Open in New Tab" button to each video on the RedGIFs site.
 // @icon         https://www.redgifs.com/favicon.ico
@@ -40,6 +40,7 @@
          */
         BUTTON_KEY: {
             TILE_OPEN: 'TILE_OPEN',
+            TILE_DOWNLOAD: 'TILE_DOWNLOAD',
             PREVIEW_OPEN: 'PREVIEW_OPEN',
             PREVIEW_DOWNLOAD: 'PREVIEW_DOWNLOAD',
         },
@@ -50,6 +51,11 @@
                 className: `${APPID}-open-in-new-tab-btn`,
                 title: 'Open in new tab',
                 iconName: 'OPEN_IN_NEW',
+            },
+            TILE_DOWNLOAD: {
+                className: `${APPID}-tile-download-btn`,
+                title: 'Download HD Video',
+                iconName: 'DOWNLOAD',
             },
             PREVIEW_OPEN: {
                 className: `${APPID}-preview-open-btn`,
@@ -141,6 +147,25 @@
         }
         .${APPID}-open-in-new-tab-btn:hover {
             background-color: rgba(0, 0, 0, 0.8);
+        }
+        /* Download Button on Thumbnails */
+        .${APPID}-tile-download-btn {
+            position: absolute;
+            top: 40px; /* Positioned below the open-in-new-tab button (8px + 28px + 4px) */
+            right: 8px;
+            z-index: 10;
+            width: 28px;
+            height: 28px;
+            padding: 0;
+            border-radius: 4px;
+            background-color: red;
+            border: none;
+            cursor: pointer;
+            display: grid;
+            place-items: center;
+        }
+        .${APPID}-tile-download-btn:hover {
+            background-color: #c00;
         }
 
         /* Buttons on Video Preview */
@@ -972,6 +997,7 @@
              */
             this.buttonHandlerMap = {
                 [CONSTANTS.BUTTON_KEY.TILE_OPEN]: this._handleOpenInNewTabClick.bind(this),
+                [CONSTANTS.BUTTON_KEY.TILE_DOWNLOAD]: this._handleDownloadClick.bind(this),
                 [CONSTANTS.BUTTON_KEY.PREVIEW_OPEN]: this._handleOpenInNewTabClick.bind(this),
                 [CONSTANTS.BUTTON_KEY.PREVIEW_DOWNLOAD]: this._handleDownloadClick.bind(this),
             };
@@ -990,7 +1016,7 @@
             // 3. Initialize UI components (toast container)
             this.ui.init();
 
-            const sentinel = new Sentinel(OWNERID);
+            const sentinel = new Sentinel(OWNERID + APPID);
 
             // 4. Register JS-based annoyance removal
             this.annoyanceManager.removeElements(sentinel);
@@ -1014,7 +1040,7 @@
                 this._onElementFound(
                     element,
                     (id) => id, // Tile ID is the video ID
-                    [CONSTANTS.BUTTON_KEY.TILE_OPEN]
+                    [CONSTANTS.BUTTON_KEY.TILE_OPEN, CONSTANTS.BUTTON_KEY.TILE_DOWNLOAD]
                 );
             });
 
@@ -1177,11 +1203,19 @@
                         // Check if cleanup is needed
                         this.ui.updateButtonState(button, 'IDLE');
                     }
+                } else if (error.status === 404) {
+                    Logger.warn(`Download failed: Not Found (404) for ${videoId}`, error);
+                    this.ui.showToast('Video not found (404).', 'error');
+                    this.ui.updateButtonState(button, 'ERROR');
+                } else if (error.status === 403) {
+                    Logger.warn(`Download failed: Forbidden (403) for ${videoId}`, error);
+                    this.ui.showToast('Access forbidden (403).', 'error');
+                    this.ui.updateButtonState(button, 'ERROR');
                 } else {
-                    // Handle all other errors (API, Download, Network, 404, Token, Timeout, etc.) uniformly
+                    // Handle all other errors (API, Download, Network, 5xx, etc.) uniformly
                     Logger.error('Download failed:', error); // Keep existing detailed log for developer
 
-                    const userErrorMessage = 'Download failed. Site update possible?';
+                    const userErrorMessage = 'Download failed. (Network error or site update?)';
 
                     this.ui.showToast(userErrorMessage, 'error'); // Show unified message to user
                     this.ui.updateButtonState(button, 'ERROR'); // Update button state
@@ -1222,7 +1256,11 @@
         async _downloadFile(url, filename, signal) {
             const response = await fetch(url, { signal }); // Pass signal to fetch
             // Throw a more user-friendly error message for HTTP errors.
-            if (!response.ok) throw new Error(`Server responded with ${response.status}`);
+            if (!response.ok) {
+                const err = new Error(`Server responded with ${response.status}`);
+                err.status = response.status;
+                throw err;
+            }
 
             const videoBlob = await response.blob();
             let objectUrl = null;
