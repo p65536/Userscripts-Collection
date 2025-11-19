@@ -1,5 +1,13 @@
 # Changelog
 
+## [1.7.0] - 2025-11-19
+- **Feat: Implemented dynamic, metadata-rich filenames.**
+  - The downloaded filename format has been updated from a static `{id}-hd.mp4` to a dynamic `{userName}_{date}_{id}` format.
+  - This allows for better organization and sorting of downloaded files.
+- **Feat: Enabled dynamic file extension detection.**
+  - Removed the hardcoded `.mp4` extension.
+  - The script now safely extracts the actual file extension from the source URL, ensuring the saved file always has the correct type.
+
 ## [1.6.0] - 2025-11-16
 - **Feat: Added download button directly to video thumbnails.**
   - A download button (identical in function to the preview button) is now added to all video tiles in grid/feed views.
