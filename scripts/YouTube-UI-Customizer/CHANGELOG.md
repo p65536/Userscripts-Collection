@@ -1,5 +1,9 @@
 # Changelog
 
+## [1.2.0] - 2025-11-19
+- **New Features**
+  - Added a new setting to **Hide "Explore more topics"**.
+
 ## [1.1.3] - 2025-11-19
 - **Improvements**
   - Extended the **Hide YouTube Shorts** feature to cover search results pages.
