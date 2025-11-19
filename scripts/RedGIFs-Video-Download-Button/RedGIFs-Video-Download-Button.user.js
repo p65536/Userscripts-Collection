@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         RedGIFs Video Download Button
 // @namespace    https://github.com/p65536
-// @version      1.6.0
+// @version      1.7.0
 // @license      MIT
 // @description  Adds a download button (for one-click HD downloads) and an "Open in New Tab" button to each video on the RedGIFs site.
 // @icon         https://www.redgifs.com/favicon.ico
@@ -26,7 +26,6 @@
         VIDEO_CONTAINER_SELECTOR: '[id^="gif_"]',
         TILE_ITEM_SELECTOR: '.tileItem',
         WATCH_URL_BASE: 'https://www.redgifs.com/watch/',
-        FILENAME_SUFFIX: '-hd.mp4',
         TOAST_DURATION: 3000,
         TOAST_ERROR_DURATION: 6000,
         TOAST_FADE_OUT_DURATION: 300,
@@ -459,6 +458,50 @@
     }
 
     /**
+     * Formats a UNIX timestamp into a YYYYMMDD_HHMMSS string.
+     * @param {number} timestamp - The UNIX timestamp (in seconds).
+     * @returns {string} The formatted date string.
+     */
+    function formatTimestamp(timestamp) {
+        const date = new Date(timestamp * 1000); // Convert seconds to milliseconds
+        const Y = date.getFullYear();
+        const M = String(date.getMonth() + 1).padStart(2, '0');
+        const D = String(date.getDate()).padStart(2, '0');
+        const h = String(date.getHours()).padStart(2, '0');
+        const m = String(date.getMinutes()).padStart(2, '0');
+        const s = String(date.getSeconds()).padStart(2, '0');
+        return `${Y}${M}${D}_${h}${m}${s}`;
+    }
+
+    /**
+     * Safely extracts the file extension (including the dot) from a URL.
+     * Considers query parameters and hashes.
+     * @param {string} url - The URL to parse.
+     * @returns {string} The extension (e.g., ".mp4") or an empty string if not found.
+     */
+    function getExtension(url) {
+        try {
+            // Use URL constructor to isolate pathname, ignoring query/hash
+            const pathname = new URL(url).pathname;
+
+            // Find the last dot
+            const lastDotIndex = pathname.lastIndexOf('.');
+
+            // If no dot is found, or if it's the first character (e.g., "/.config"),
+            // it's not a valid extension for our purpose.
+            if (lastDotIndex < 1) {
+                return ''; // No extension found
+            }
+
+            // Return the substring from the last dot to the end.
+            return pathname.substring(lastDotIndex); // e.g., ".mp4"
+        } catch (e) {
+            Logger.warn('Could not parse URL to get extension:', url, e);
+            return ''; // Return empty on URL parsing failure
+        }
+    }
+
+    /**
      * Recursively builds a DOM element from a definition object using the h() function.
      * @param {object} def The definition object for the element.
      * @returns {HTMLElement | SVGElement | null} The created DOM element.
@@ -496,18 +539,32 @@
          */
         static #API_GIF_HD_URL_EXTRACTOR = (gif) => gif?.urls?.hd;
 
+        /**
+         * Extracts the User Name from a 'gif' object in the API response.
+         * @param {object} gif - The gif object from the API.
+         * @returns {string|undefined} The User Name.
+         */
+        static #API_GIF_USERNAME_EXTRACTOR = (gif) => gif?.userName;
+
+        /**
+         * Extracts the Create Date (timestamp) from a 'gif' object in the API response.
+         * @param {object} gif - The gif object from the API.
+         * @returns {number|undefined} The creation timestamp.
+         */
+        static #API_GIF_CREATEDATE_EXTRACTOR = (gif) => gif?.createDate;
+
         constructor() {
-            /** @type {Map<string, string>} */
+            /** @type {Map<string, {hdUrl: string, userName: string, createDate: number}>} */
             this.videoCache = new Map();
             this._initJsonInterceptor();
         }
 
         /**
-         * Gets the cached HD URL for a given video ID.
+         * Gets the cached Video Info for a given video ID.
          * @param {string} videoId The ID of the video.
-         * @returns {string|undefined} The cached HD URL or undefined if not found.
+         * @returns {{hdUrl: string, userName: string, createDate: number}|undefined} The cached info object or undefined if not found.
          */
-        getCachedHdUrl(videoId) {
+        getCachedVideoInfo(videoId) {
             return this.videoCache.get(videoId);
         }
 
@@ -567,9 +624,15 @@
                         const videoId = ApiManager.#API_GIF_ID_EXTRACTOR(gif);
                         const hdUrl = ApiManager.#API_GIF_HD_URL_EXTRACTOR(gif);
 
+                        // Only require videoId and hdUrl to cache.
                         if (videoId && hdUrl) {
                             if (!this.videoCache.has(videoId)) {
-                                this.videoCache.set(videoId, hdUrl);
+                                // Get optional metadata. These can be undefined.
+                                const userName = ApiManager.#API_GIF_USERNAME_EXTRACTOR(gif);
+                                const createDate = ApiManager.#API_GIF_CREATEDATE_EXTRACTOR(gif);
+
+                                // Store the info object, possibly with undefined values.
+                                this.videoCache.set(videoId, { hdUrl, userName, createDate });
                                 count++;
                             }
                         }
@@ -1174,21 +1237,21 @@
 
             try {
                 // --- 2a. Check Cache ---
-                const cachedHdUrl = this.apiManager.getCachedHdUrl(videoId);
+                const videoInfo = this.apiManager.getCachedVideoInfo(videoId);
 
-                if (cachedHdUrl) {
+                if (videoInfo) {
                     // --- 2b. [Cache Hit] Execute Download ---
                     Logger.badge('CACHE HIT', LOG_STYLES.LOG, 'log', `Starting download for ${videoId}`);
-                    await this._executeDownload(cachedHdUrl, videoId, controller.signal);
+                    await this._executeDownload(videoInfo, videoId, controller.signal);
 
                     // --- 2c. Handle Success ---
                     this.ui.updateButtonState(button, 'SUCCESS');
                     this.ui.showToast('Download successful!', 'success');
-                    Logger.log(`Downloaded ${videoId} from:`, cachedHdUrl);
+                    Logger.log(`Downloaded ${videoId} from:`, videoInfo.hdUrl);
                 } else {
                     // --- 2d. [Cache Miss] Handle Failure ---
-                    Logger.warn(`HD URL not found in cache for ${videoId}.`);
-                    this.ui.showToast('HD URL not found in cache. (Try scrolling or refreshing)', 'error');
+                    Logger.warn(`Video info not found in cache for ${videoId}.`);
+                    this.ui.showToast('Video info not found in cache. (Try scrolling or refreshing)', 'error');
                     this.ui.updateButtonState(button, 'ERROR');
                 }
             } catch (error) {
@@ -1229,20 +1292,54 @@
 
         /**
          * Performs the actual download process (file save).
-         * @param {string} hdUrl - The direct HD URL from the cache.
+         * @param {{hdUrl: string, userName: string|undefined, createDate: number|undefined}} videoInfo - The video info object from the cache.
          * @param {string} videoId - The ID of the video to download (for filename).
          * @param {AbortSignal} signal - The AbortSignal to cancel the fetch operations.
          * @returns {Promise<void>}
          * @private
          */
-        async _executeDownload(hdUrl, videoId, signal) {
-            // --- 2a. Get Video Info ---
-            const downloadUrl = hdUrl; // Use URL from cache
-            const filename = `${videoId}${CONSTANTS.FILENAME_SUFFIX}`; // Use videoId for filename
-            const safeFilename = filename.replace(/[\\/:*?"<>|]/g, '_'); // Sanitize filename
+        async _executeDownload(videoInfo, videoId, signal) {
+            // --- A. Get Video Info ---
+            const { hdUrl, userName, createDate } = videoInfo;
+            const downloadUrl = hdUrl;
 
-            // --- 2b. Download File ---
-            await this._downloadFile(downloadUrl, safeFilename, signal);
+            // --- Hierarchical Filename Fallback ---
+            const filenameParts = [];
+
+            // 1. Add userName (if available)
+            if (userName) {
+                filenameParts.push(userName);
+            }
+
+            // 2. Add Date (if AND ONLY IF userName is also available)
+            if (userName && createDate && typeof createDate === 'number') {
+                const dateString = formatTimestamp(createDate);
+                filenameParts.push(dateString);
+            }
+
+            // 3. Add id (always)
+            filenameParts.push(videoId);
+
+            // Construct base filename (without extension)
+            const baseFilename = filenameParts.join('_');
+
+            // --- Dynamic Extension ---
+            let extension = getExtension(hdUrl);
+
+            if (!extension) {
+                Logger.warn(`Could not determine extension from URL. Defaulting to '.mp4'. URL:`, hdUrl);
+                extension = '.mp4'; // Fallback to ".mp4" if extraction fails
+            }
+
+            // The _downloadFile method will sanitize this filename.
+            // --- Filename Examples (depends on extension in "hdUrl") ---
+            // 1. All data:   "userName_dateString_videoId.mp4"
+            // 2. No date:    "userName_videoId.mp4"
+            // 3. No user:    "videoId.mp4"
+            const filename = `${baseFilename}${extension}`;
+
+            // --- B. Download File ---
+            await this._downloadFile(downloadUrl, filename, signal);
         }
 
         /**
