@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         YouTube-UI-Customizer
 // @namespace    https://github.com/p65536
-// @version      1.1.2
+// @version      1.1.3
 // @license      MIT
 // @description  Enhances your YouTube experience. Customize the video grid layout by adjusting thumbnails per row, hide Shorts content, and automatically redirect the Shorts player to the standard video player.
 // @icon         https://www.youtube.com/favicon.ico
@@ -118,6 +118,7 @@
                 'ytd-compact-video-renderer:has(a[href*="/shorts/"])',
                 'ytd-guide-entry-renderer[guide-entry-title="Shorts"]',
                 'ytd-mini-guide-entry-renderer[aria-label="Shorts"]',
+                'grid-shelf-view-model:has(ytm-shorts-lockup-view-model)',
             ],
         },
         UI_DEFAULTS: {
@@ -342,8 +343,8 @@
 
         const fragment = document.createDocumentFragment();
         /**
-         *
-         * @param child
+         * Appends a child node or text to the document fragment.
+         * @param {HChild} child - The child to append.
          */
         function append(child) {
             if (child === null || child === false || typeof child === 'undefined') return;
