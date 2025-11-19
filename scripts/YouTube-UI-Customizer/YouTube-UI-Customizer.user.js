@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         YouTube-UI-Customizer
 // @namespace    https://github.com/p65536
-// @version      1.1.3
+// @version      1.2.0
 // @license      MIT
 // @description  Enhances your YouTube experience. Customize the video grid layout by adjusting thumbnails per row, hide Shorts content, and automatically redirect the Shorts player to the standard video player.
 // @icon         https://www.youtube.com/favicon.ico
@@ -120,6 +120,7 @@
                 'ytd-mini-guide-entry-renderer[aria-label="Shorts"]',
                 'grid-shelf-view-model:has(ytm-shorts-lockup-view-model)',
             ],
+            moreTopics: 'ytd-rich-section-renderer:has(ytd-chips-shelf-with-video-shelf-renderer)',
         },
         UI_DEFAULTS: {
             SETTINGS_BUTTON: {
@@ -141,6 +142,7 @@
         options: {
             itemsPerRow: 5,
             hideShorts: true,
+            hideMoreTopics: true,
             redirectShorts: true,
             syncTabs: true,
         },
@@ -622,6 +624,10 @@
                     h('label', { htmlFor: `${APPID}-hide-shorts-toggle` }, 'Hide YouTube Shorts'),
                     createToggle(`${APPID}-hide-shorts-toggle`, 'Hides Shorts videos from shelves, search results, and navigation menus.'),
                 ]),
+                h(`div.${APPID}-submenu-row`, { style: { marginTop: '12px' } }, [
+                    h('label', { htmlFor: `${APPID}-hide-more-topics-toggle` }, "Hide 'Explore more topics'"),
+                    createToggle(`${APPID}-hide-more-topics-toggle`, "Hides the 'Explore more topics' section from the feed."),
+                ]),
                 h('div', { style: { borderTop: '1px solid var(--yt-spec-border-primary, #ddd)', margin: '12px 0' } }),
                 h(`div.${APPID}-submenu-row`, [
                     h('label', { htmlFor: `${APPID}-redirect-shorts-toggle` }, 'Redirect Shorts player'),
@@ -640,6 +646,7 @@
             this._updateSliderAppearance(slider);
 
             this.element.querySelector(`#${APPID}-hide-shorts-toggle`).checked = config.options.hideShorts;
+            this.element.querySelector(`#${APPID}-hide-more-topics-toggle`).checked = config.options.hideMoreTopics;
             this.element.querySelector(`#${APPID}-redirect-shorts-toggle`).checked = config.options.redirectShorts;
             this.element.querySelector(`#${APPID}-sync-tabs-toggle`).checked = config.options.syncTabs;
         }
@@ -651,6 +658,7 @@
             newConfig.options.itemsPerRow = parseInt(slider.value, 10);
 
             newConfig.options.hideShorts = this.element.querySelector(`#${APPID}-hide-shorts-toggle`).checked;
+            newConfig.options.hideMoreTopics = this.element.querySelector(`#${APPID}-hide-more-topics-toggle`).checked;
             newConfig.options.redirectShorts = this.element.querySelector(`#${APPID}-redirect-shorts-toggle`).checked;
             newConfig.options.syncTabs = this.element.querySelector(`#${APPID}-sync-tabs-toggle`).checked;
 
@@ -909,7 +917,7 @@
         }
 
         static update(options) {
-            const { itemsPerRow, hideShorts } = options;
+            const { itemsPerRow, hideShorts, hideMoreTopics } = options;
             const GAP = 12; // A reasonable default gap in pixels
 
             let cssText = `
@@ -940,9 +948,18 @@
                 `;
             }
 
+            if (hideMoreTopics) {
+                cssText += `
+                    /* CSS to hide 'Explore more topics' section */
+                    ${CONSTANTS.SELECTORS.moreTopics} {
+                        display: none !important;
+                    }
+                `;
+            }
+
             if (this.styleElement.textContent !== cssText) {
                 this.styleElement.textContent = cssText;
-                Logger.log(`Styles updated: ItemsPerRow=${itemsPerRow}, HideShorts=${hideShorts}`);
+                Logger.log(`Styles updated: ItemsPerRow=${itemsPerRow}, HideShorts=${hideShorts}, HideMoreTopics=${hideMoreTopics}`);
             }
         }
     }
