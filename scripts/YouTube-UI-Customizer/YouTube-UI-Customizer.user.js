@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         YouTube-UI-Customizer
 // @namespace    https://github.com/p65536
-// @version      1.2.0
+// @version      1.2.1
 // @license      MIT
 // @description  Enhances your YouTube experience. Customize the video grid layout by adjusting thumbnails per row, hide Shorts content, and automatically redirect the Shorts player to the standard video player.
 // @icon         https://www.youtube.com/favicon.ico
@@ -17,13 +17,26 @@
 (() => {
     'use strict';
 
+    /**
+     * Extracts the Video ID from a Shorts URL path.
+     * @param {string} path
+     * @returns {string|null} The video ID or null if not found.
+     */
+    const getShortsVideoId = (path) => {
+        const match = path.match(/^\/shorts\/([a-zA-Z0-9_-]+)/);
+        return match ? match[1] : null;
+    };
+
     // --- Fast Redirect for Shorts (Full Page Load) ---
     // This runs at @run-at document-start, *before* the DOM is ready.
     // It intercepts full page loads (e.g., new tab, ctrl+click) of /shorts/ URLs
     // and immediately replaces them with the standard /watch?v= player.
     // This prevents the Shorts player UI from ever loading or "flashing".
-    if (location.pathname.startsWith('/shorts/')) {
-        location.replace(location.href.replace('/shorts/', '/watch?v='));
+    const initialVideoId = getShortsVideoId(location.pathname);
+    if (initialVideoId) {
+        const params = new URLSearchParams(location.search);
+        params.set('v', initialVideoId);
+        location.replace(`/watch?${params.toString()}`);
         return; // Stop the rest of the script from executing, as we are navigating away.
     }
 
@@ -1070,16 +1083,22 @@
             const config = this.configManager.get();
             if (!config.options.redirectShorts) return;
 
-            const url = e.detail.url;
-            if (url && url.startsWith('/shorts/')) {
-                const videoId = url.split('/shorts/')[1];
-                if (videoId) {
-                    e.preventDefault(); // Stop the navigation to the Shorts player
-                    const newUrl = `/watch?v=${videoId}`;
-                    Logger.log(`Shorts navigation detected, redirecting to: ${newUrl}`);
-                    window.history.pushState({}, '', newUrl);
-                    window.dispatchEvent(new PopStateEvent('popstate', { state: {} }));
-                }
+            const urlString = e.detail.url;
+            if (!urlString) return;
+
+            const url = new URL(urlString, window.location.origin);
+            const videoId = getShortsVideoId(url.pathname);
+
+            if (videoId) {
+                e.preventDefault(); // Stop the navigation to the Shorts player
+
+                // Preserve existing query params and add 'v'
+                url.searchParams.set('v', videoId);
+                const newUrl = `/watch?${url.searchParams.toString()}`;
+
+                Logger.log(`Shorts navigation detected, redirecting to: ${newUrl}`);
+                window.history.pushState({}, '', newUrl);
+                window.dispatchEvent(new PopStateEvent('popstate', { state: {} }));
             }
         }
 
