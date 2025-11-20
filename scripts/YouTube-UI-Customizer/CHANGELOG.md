@@ -1,5 +1,9 @@
 # Changelog
 
+## [1.2.1] - 2025-11-20
+- **Fixes & Improvements**
+  - Improved the reliability of **Shorts Redirection**. The feature now correctly handles shared links (e.g., `?feature=share`) and other complex URLs without losing parameters.
+
 ## [1.2.0] - 2025-11-19
 - **New Features**
   - Added a new setting to **Hide "Explore more topics"**.
