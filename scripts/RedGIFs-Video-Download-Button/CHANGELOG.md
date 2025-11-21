@@ -1,5 +1,12 @@
 # Changelog
 
+## [1.8.0] - 2025-11-21
+- **Feat: Added customizable filename templates.**
+  - Users can now customize the naming convention for downloaded videos by editing the `FILENAME_TEMPLATE` variable in the script.
+  - Supports placeholders `{user}`, `{date}`, and `{id}` (Default: `{user}_{date}_{id}`).
+  - Includes smart sanitization to ensure filenames remain clean (e.g., no double underscores) even if some video metadata is missing.
+  - **Note:** Since this configuration is defined within the script, updating the script will reset the template to the default. You will need to re-apply your custom format after each update.
+
 ## [1.7.0] - 2025-11-19
 - **Feat: Implemented dynamic, metadata-rich filenames.**
   - The downloaded filename format has been updated from a static `{id}-hd.mp4` to a dynamic `{userName}_{date}_{id}` format.

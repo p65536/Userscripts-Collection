@@ -11,6 +11,9 @@ A collection of simple, single-purpose userscripts for various websites.
 
 ## Recent Updates
 
+### 2025/11/21
+- Updated `RedGIFs Video Download Button` (v1.7.0 -> v1.8.0)  
+
 ### 2025/11/20
 - Updated `YouTube UI Customizer` (v1.2.0 -> v1.2.1)  
 
@@ -67,7 +70,7 @@ It also includes a powerful **Annoyance & Ad Remover** to clean up the UI.
 
 | Platform | GitHub | Greasy Fork | Version | Last Updated | Changelog |
 | :--- | :--- | :--- | :--- | :--- | :--- |
-| **RedGifs** | [![Download](https://img.shields.io/badge/Download-blue?style=flat-square&logo=download)](https://raw.githubusercontent.com/p65536/Userscripts-Collection/main/scripts/RedGIFs-Video-Download-Button/RedGIFs-Video-Download-Button.user.js) | [![Greasy Fork](https://img.shields.io/badge/Install-green?style=flat-square&logo=greasyfork)](https://greasyfork.org/en/scripts/545472-redgifs-video-download-button) | 1.7.0 | 2025/11/19 | [View](./scripts/RedGIFs-Video-Download-Button/CHANGELOG.md) |
+| **RedGifs** | [![Download](https://img.shields.io/badge/Download-blue?style=flat-square&logo=download)](https://raw.githubusercontent.com/p65536/Userscripts-Collection/main/scripts/RedGIFs-Video-Download-Button/RedGIFs-Video-Download-Button.user.js) | [![Greasy Fork](https://img.shields.io/badge/Install-green?style=flat-square&logo=greasyfork)](https://greasyfork.org/en/scripts/545472-redgifs-video-download-button) | 1.8.0 | 2025/11/21 | [View](./scripts/RedGIFs-Video-Download-Button/CHANGELOG.md) |
 
 ##### Potential Conflict Warning
 
