@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         RedGIFs Video Download Button
 // @namespace    https://github.com/p65536
-// @version      1.7.0
+// @version      1.8.0
 // @license      MIT
 // @description  Adds a download button (for one-click HD downloads) and an "Open in New Tab" button to each video on the RedGIFs site.
 // @icon         https://www.redgifs.com/favicon.ico
@@ -23,6 +23,29 @@
     const APPID = 'rgvdb';
     const LOG_PREFIX = `[${APPID.toUpperCase()}]`;
     const CONSTANTS = {
+        // =================================================================================
+        // SECTION: USER SETTINGS (Customizable)
+        // =================================================================================
+
+        /**
+         * Template for the filename of downloaded videos.
+         * You can customize the format using the following placeholders:
+         * - {user}: The creator's username (e.g., "RedGifsOfficial")
+         * - {date}: The creation date (YYYYMMDD_HHMMSS)
+         * - {id}:   The unique video ID (e.g., "watchfulwaiting")
+         *
+         * Default: '{user}_{date}_{id}'
+         *
+         * Examples:
+         * - '{user}_{date}_{id}'  -> "RedGifsOfficial_20250101_120000_watchfulwaiting.mp4"
+         * - 'MyCollection_{id}'   -> "MyCollection_watchfulwaiting.mp4"
+         */
+        FILENAME_TEMPLATE: '{user}_{date}_{id}',
+
+        // =================================================================================
+        // SECTION: INTERNAL CONSTANTS (Do not modify below this line)
+        // =================================================================================
+
         VIDEO_CONTAINER_SELECTOR: '[id^="gif_"]',
         TILE_ITEM_SELECTOR: '.tileItem',
         WATCH_URL_BASE: 'https://www.redgifs.com/watch/',
@@ -519,6 +542,51 @@
         }
         return cache;
     })();
+
+    /**
+     * Resolves a filename template with provided replacements, handling sanitization.
+     * @param {string} template - The filename template (e.g., "{user}_{date}_{id}").
+     * @param {Object<string, string>} replacements - Key-value pairs for replacements.
+     * @returns {string} The resolved and sanitized filename.
+     */
+    function resolveFilename(template, replacements) {
+        // 1. Validate bracket checks (simple balance check for {})
+        const openCount = (template.match(/\{/g) || []).length;
+        const closeCount = (template.match(/\}/g) || []).length;
+
+        let validTemplate = template;
+        // Fallback to default if brackets are unbalanced
+        if (openCount !== closeCount) {
+            Logger.warn('Filename template has unbalanced brackets. Falling back to default.');
+            validTemplate = '{user}_{date}_{id}';
+        }
+
+        // 2. Replace placeholders
+        let result = validTemplate.replace(/\{(\w+)\}/g, (match, key) => {
+            // If key exists in replacements, use it (even if empty string).
+            // If key does NOT exist in replacements, keep the original placeholder string.
+            if (Object.prototype.hasOwnProperty.call(replacements, key)) {
+                const val = replacements[key];
+                return val ? String(val) : '';
+            }
+            return match;
+        });
+
+        // 3. Sanitize
+        // Replace consecutive separators (space, underscore, hyphen, dot) with a single instance of the first match.
+        // This prevents double underscores like "__" or "_-_" when a placeholder is empty.
+        result = result.replace(/([ _.-])\1+/g, '$1');
+
+        // Remove separators from start and end
+        result = result.replace(/^[ _.-]+|[ _.-]+$/g, '');
+
+        // Fallback if result becomes empty (unlikely but possible if all data is missing)
+        if (!result) {
+            result = 'video';
+        }
+
+        return result;
+    }
 
     // =================================================================================
     // SECTION: API Manager
@@ -1303,25 +1371,16 @@
             const { hdUrl, userName, createDate } = videoInfo;
             const downloadUrl = hdUrl;
 
-            // --- Hierarchical Filename Fallback ---
-            const filenameParts = [];
+            // --- B. Resolve Filename ---
+            const dateString = createDate && typeof createDate === 'number' ? formatTimestamp(createDate) : '';
 
-            // 1. Add userName (if available)
-            if (userName) {
-                filenameParts.push(userName);
-            }
+            const replacements = {
+                user: userName || '',
+                date: dateString,
+                id: videoId || '',
+            };
 
-            // 2. Add Date (if AND ONLY IF userName is also available)
-            if (userName && createDate && typeof createDate === 'number') {
-                const dateString = formatTimestamp(createDate);
-                filenameParts.push(dateString);
-            }
-
-            // 3. Add id (always)
-            filenameParts.push(videoId);
-
-            // Construct base filename (without extension)
-            const baseFilename = filenameParts.join('_');
+            const baseFilename = resolveFilename(CONSTANTS.FILENAME_TEMPLATE, replacements);
 
             // --- Dynamic Extension ---
             let extension = getExtension(hdUrl);
@@ -1331,14 +1390,10 @@
                 extension = '.mp4'; // Fallback to ".mp4" if extraction fails
             }
 
-            // The _downloadFile method will sanitize this filename.
-            // --- Filename Examples (depends on extension in "hdUrl") ---
-            // 1. All data:   "userName_dateString_videoId.mp4"
-            // 2. No date:    "userName_videoId.mp4"
-            // 3. No user:    "videoId.mp4"
+            // The _downloadFile method will sanitize this filename further if needed.
             const filename = `${baseFilename}${extension}`;
 
-            // --- B. Download File ---
+            // --- C. Download File ---
             await this._downloadFile(downloadUrl, filename, signal);
         }
 
