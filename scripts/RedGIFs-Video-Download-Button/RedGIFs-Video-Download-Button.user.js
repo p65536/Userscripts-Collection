@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         RedGIFs Video Download Button
 // @namespace    https://github.com/p65536
-// @version      1.8.0
+// @version      1.9.0
 // @license      MIT
 // @description  Adds a download button (for one-click HD downloads) and an "Open in New Tab" button to each video on the RedGIFs site.
 // @icon         https://www.redgifs.com/favicon.ico
@@ -22,29 +22,59 @@
     const OWNERID = 'p65536';
     const APPID = 'rgvdb';
     const LOG_PREFIX = `[${APPID.toUpperCase()}]`;
-    const CONSTANTS = {
-        // =================================================================================
-        // SECTION: USER SETTINGS (Customizable)
-        // =================================================================================
+
+    // =================================================================================
+    // SECTION: USER SETTINGS (Customizable)
+    // =================================================================================
+
+    const USER_SETTINGS = {
+        /**
+         * General settings affecting all buttons/UI.
+         */
+        common: {
+            /**
+             * If true, ALL buttons are hidden by default and only appear when hovering over the thumbnail/video.
+             * This applies globally to prevent layout misalignment.
+             * (On mobile, buttons are always visible regardless of this setting to prevent usability issues)
+             */
+            showOnlyOnHover: false,
+        },
 
         /**
-         * Template for the filename of downloaded videos.
-         * You can customize the format using the following placeholders:
-         * - {user}: The creator's username (e.g., "RedGifsOfficial")
-         * - {date}: The creation date (YYYYMMDD_HHMMSS)
-         * - {id}:   The unique video ID (e.g., "watchfulwaiting")
-         *
-         * Default: '{user}_{date}_{id}'
-         *
-         * Examples:
-         * - '{user}_{date}_{id}'  -> "RedGifsOfficial_20250101_120000_watchfulwaiting.mp4"
-         * - 'MyCollection_{id}'   -> "MyCollection_watchfulwaiting.mp4"
+         * Settings related to the Download functionality.
          */
-        FILENAME_TEMPLATE: '{user}_{date}_{id}',
+        download: {
+            /**
+             * Template for the filename of downloaded videos.
+             * You can customize the format using the following placeholders:
+             * - {user}: The creator's username (e.g., "RedGifsOfficial")
+             * - {date}: The creation date (YYYYMMDD_HHMMSS)
+             * - {id}:   The unique video ID (e.g., "watchfulwaiting")
+             *
+             * Default: '{user}_{date}_{id}'
+             */
+            filenameTemplate: '{user}_{date}_{id}',
+        },
 
-        // =================================================================================
-        // SECTION: INTERNAL CONSTANTS (Do not modify below this line)
-        // =================================================================================
+        /**
+         * Settings related to the "Open in New Tab" functionality.
+         */
+        openInNewTab: {
+            /**
+             * Set to false to completely remove this button.
+             * If disabled, the download button will automatically move up to take its place.
+             */
+            enabled: true,
+        },
+    };
+
+    // =================================================================================
+    // SECTION: INTERNAL CONSTANTS (Do not modify below this line)
+    // =================================================================================
+
+    const CONSTANTS = {
+        // Maps the standalone settings object here for internal usage.
+        USER_SETTINGS: USER_SETTINGS,
 
         VIDEO_CONTAINER_SELECTOR: '[id^="gif_"]',
         TILE_ITEM_SELECTOR: '.tileItem',
@@ -55,40 +85,13 @@
         ICON_REVERT_DELAY: 2000,
         CANCEL_LOCK_DURATION: 600, // (ms) Duration to lock download button to prevent mis-click cancel
 
-        // --- Button configurations ---
         /**
          * @enum {string}
-         * Defines unique keys for button configurations.
+         * Defines the context where buttons are added.
          */
-        BUTTON_KEY: {
-            TILE_OPEN: 'TILE_OPEN',
-            TILE_DOWNLOAD: 'TILE_DOWNLOAD',
-            PREVIEW_OPEN: 'PREVIEW_OPEN',
-            PREVIEW_DOWNLOAD: 'PREVIEW_DOWNLOAD',
-        },
-
-        /** @type {Object<string, ButtonConfig>} */
-        BUTTON_CONFIGS: {
-            TILE_OPEN: {
-                className: `${APPID}-open-in-new-tab-btn`,
-                title: 'Open in new tab',
-                iconName: 'OPEN_IN_NEW',
-            },
-            TILE_DOWNLOAD: {
-                className: `${APPID}-tile-download-btn`,
-                title: 'Download HD Video',
-                iconName: 'DOWNLOAD',
-            },
-            PREVIEW_OPEN: {
-                className: `${APPID}-preview-open-btn`,
-                title: 'Open in new tab',
-                iconName: 'OPEN_IN_NEW',
-            },
-            PREVIEW_DOWNLOAD: {
-                className: `${APPID}-preview-download-btn`,
-                title: 'Download HD Video',
-                iconName: 'DOWNLOAD',
-            },
+        CONTEXT_TYPE: {
+            TILE: 'TILE',
+            PREVIEW: 'PREVIEW',
         },
     };
     const BASE_ICON_PROPS = {
@@ -166,6 +169,8 @@
             align-items: center;
             justify-content: center;
             opacity: 1;
+            text-decoration: none; /* For <a> tag */
+            color: inherit; /* Prevent blue link color */
         }
         .${APPID}-open-in-new-tab-btn:hover {
             background-color: rgba(0, 0, 0, 0.8);
@@ -209,6 +214,8 @@
             display: flex;
             align-items: center;
             justify-content: center;
+            text-decoration: none; /* For <a> tag */
+            color: inherit; /* Prevent blue link color */
         }
         .${APPID}-preview-open-btn:hover {
             background-color: rgba(0, 0, 0, 0.8);
@@ -573,7 +580,11 @@
         });
 
         // 3. Sanitize
-        // Replace consecutive separators (space, underscore, hyphen, dot) with a single instance of the first match.
+        // Step A: Remove forbidden characters (Windows/Linux/macOS safe)
+        // Removes only OS reserved characters: < > : " / \ | ? *
+        result = result.replace(/[<>:"/\\|?*]/g, '');
+
+        // Step B: Replace consecutive separators (space, underscore, hyphen, dot) with a single instance of the first match.
         // This prevents double underscores like "__" or "_-_" when a placeholder is empty.
         result = result.replace(/([ _.-])\1+/g, '$1');
 
@@ -813,7 +824,7 @@
 
         /**
          * Sets the icon for a given button.
-         * @param {HTMLButtonElement} button The button element to modify.
+         * @param {HTMLElement} button The button or anchor element to modify.
          * @param {'DOWNLOAD'|'SPINNER'|'SUCCESS'|'ERROR'|'OPEN_IN_NEW'} iconName The name of the icon to set.
          * @private
          */
@@ -863,11 +874,96 @@
         }
 
         /**
+         * A generic helper to create and append a link button (<a> tag).
+         * @param {object} options - The configuration for the button.
+         * @param {HTMLElement} options.parentElement - The element to append the button to.
+         * @param {string} options.className - The CSS class for the button.
+         * @param {string} options.title - The button's tooltip text.
+         * @param {string} options.iconName - The key of the icon in the ICONS object.
+         * @param {string} options.href - The URL the link points to.
+         * @param {(e: MouseEvent) => void} [options.clickHandler] - Optional click handler (e.g., for stopPropagation).
+         */
+        createLinkButton({ parentElement, className, title, iconName, href, clickHandler }) {
+            // Prevent duplicate buttons
+            if (parentElement.querySelector(`.${className}`)) {
+                return;
+            }
+
+            const button = h(`a.${className}`, {
+                href: href,
+                target: '_blank',
+                rel: 'noopener noreferrer',
+                title: title,
+                draggable: 'false', // Prevent dragging the link image
+                onclick: clickHandler,
+            });
+
+            this._setButtonIcon(button, iconName);
+            parentElement.appendChild(button);
+        }
+
+        /**
          * Injects the necessary CSS styles into the document's head.
          * @private
          */
         _injectStyles() {
-            const styleElement = h('style', { type: 'text/css', 'data-owner': APPID }, STYLES);
+            // 1. Base Styles
+            let css = STYLES;
+
+            // 2. Dynamic Styles based on USER_SETTINGS
+            const settings = CONSTANTS.USER_SETTINGS;
+
+            // Define class names locally since config object was removed
+            const CLS = {
+                TILE_OPEN: `${APPID}-open-in-new-tab-btn`,
+                TILE_DOWNLOAD: `${APPID}-tile-download-btn`,
+                PREVIEW_OPEN: `${APPID}-preview-open-btn`,
+                PREVIEW_DOWNLOAD: `${APPID}-preview-download-btn`,
+            };
+
+            // Helper to generate hover-only styles
+            const createHoverStyle = (btnClass, parentSelector) => `
+                /* Default state: Hidden and non-clickable */
+                .${btnClass} {
+                    opacity: 0;
+                    pointer-events: none;
+                    transition: opacity 0.2s ease-in-out;
+                }
+                /* Hover state: Visible and clickable */
+                ${parentSelector}:hover .${btnClass} {
+                    opacity: 1;
+                    pointer-events: auto;
+                }
+                /* Mobile: Always visible (force override) */
+                .App.phone .${btnClass} {
+                    opacity: 1 !important;
+                    pointer-events: auto !important;
+                }
+            `;
+
+            // Apply 'Show Only On Hover' globally if enabled
+            if (settings.common.showOnlyOnHover) {
+                // Apply to all 4 button types
+                css += createHoverStyle(CLS.TILE_OPEN, CONSTANTS.TILE_ITEM_SELECTOR);
+                css += createHoverStyle(CLS.PREVIEW_OPEN, CONSTANTS.VIDEO_CONTAINER_SELECTOR);
+                css += createHoverStyle(CLS.TILE_DOWNLOAD, CONSTANTS.TILE_ITEM_SELECTOR);
+                css += createHoverStyle(CLS.PREVIEW_DOWNLOAD, CONSTANTS.VIDEO_CONTAINER_SELECTOR);
+            }
+
+            // 3. Layout Adjustments (if Open in New Tab is disabled)
+            if (!settings.openInNewTab.enabled) {
+                // Move Download buttons up to fill the gap
+                css += `
+                    /* Move Download Button to top position (8px) */
+                    .${CLS.TILE_DOWNLOAD} { top: 8px !important; }
+                    .${CLS.PREVIEW_DOWNLOAD} { top: 8px !important; }
+                    
+                    /* Mobile adjustment for Preview (64px = Toolbar + 8px) */
+                    .App.phone .${CLS.PREVIEW_DOWNLOAD} { top: 64px !important; }
+                `;
+            }
+
+            const styleElement = h('style', { type: 'text/css', 'data-owner': APPID }, css);
             document.head.appendChild(styleElement);
         }
     }
@@ -1002,9 +1098,18 @@
      * @property {Map<string, Array<(element: Element) => void>>} listeners
      * @property {Set<string>} rules
      * @property {HTMLElement | null} styleElement
+     * @property {CSSStyleSheet | null} sheet
+     * @property {string[]} pendingRules
      */
     class Sentinel {
-        constructor(prefix = 'my-project') {
+        /**
+         * @param {string} prefix - A unique identifier for this Sentinel instance to avoid CSS conflicts. Required.
+         */
+        constructor(prefix) {
+            if (!prefix) {
+                throw new Error('[Sentinel] "prefix" argument is required to avoid CSS conflicts.');
+            }
+
             /** @type {any} */
             const globalScope = window;
             globalScope.__global_sentinel_instances__ = globalScope.__global_sentinel_instances__ || {};
@@ -1018,6 +1123,8 @@
             this.listeners = new Map();
             this.rules = new Set(); // Tracks all active selectors
             this.styleElement = null; // Holds the reference to the single style element
+            this.sheet = null; // Cache the CSSStyleSheet reference
+            this.pendingRules = []; // Queue for rules requested before sheet is ready
 
             this._injectStyleElement();
             document.addEventListener('animationstart', this._handleAnimationStart.bind(this), true);
@@ -1028,14 +1135,82 @@
         _injectStyleElement() {
             // Ensure the style element is injected only once per project prefix.
             this.styleElement = document.getElementById(this.styleId);
-            if (this.styleElement) return;
 
-            const keyframes = `@keyframes ${this.animationName} { from { transform: none; } to { transform: none; } }`;
+            if (this.styleElement instanceof HTMLStyleElement) {
+                this.sheet = this.styleElement.sheet;
+                return;
+            }
+
+            // Create empty style element
             this.styleElement = h('style', {
                 id: this.styleId,
-                textContent: keyframes,
             });
-            document.head.appendChild(this.styleElement);
+
+            // Try to inject immediately. If the document is not yet ready (e.g. extremely early document-start), wait for the root element.
+            const target = document.head || document.documentElement;
+
+            const initSheet = () => {
+                if (this.styleElement instanceof HTMLStyleElement) {
+                    this.sheet = this.styleElement.sheet;
+                    // Insert the shared keyframes rule at index 0 and keep it there.
+                    // We use insertRule for performance instead of textContent replacement.
+                    try {
+                        const keyframes = `@keyframes ${this.animationName} { from { transform: none; } to { transform: none; } }`;
+                        this.sheet.insertRule(keyframes, 0);
+                    } catch (e) {
+                        Logger.badge('SENTINEL', LOG_STYLES.RED, 'error', 'Failed to insert keyframes rule:', e);
+                    }
+                    this._flushPendingRules();
+                }
+            };
+
+            if (target) {
+                target.appendChild(this.styleElement);
+                initSheet();
+            } else {
+                const observer = new MutationObserver(() => {
+                    const retryTarget = document.head || document.documentElement;
+                    if (retryTarget) {
+                        observer.disconnect();
+                        retryTarget.appendChild(this.styleElement);
+                        initSheet();
+                    }
+                });
+                observer.observe(document, { childList: true });
+            }
+        }
+
+        _flushPendingRules() {
+            if (!this.sheet || this.pendingRules.length === 0) return;
+
+            const rulesToInsert = [...this.pendingRules];
+            this.pendingRules = [];
+
+            rulesToInsert.forEach((selector) => {
+                this._insertRule(selector);
+            });
+        }
+
+        /**
+         * Helper to insert a single rule into the stylesheet
+         * @param {string} selector
+         */
+        _insertRule(selector) {
+            try {
+                const index = this.sheet.cssRules.length;
+                const ruleText = `${selector} { animation-duration: 0.001s; animation-name: ${this.animationName}; }`;
+                this.sheet.insertRule(ruleText, index);
+
+                // Tag the inserted rule object with the selector for safer removal later.
+                // This mimics sentinel.js behavior to handle index shifts and selector normalization.
+                const insertedRule = this.sheet.cssRules[index];
+                if (insertedRule) {
+                    // @ts-ignore - Custom property for tracking
+                    insertedRule._id = selector;
+                }
+            } catch (e) {
+                Logger.badge('SENTINEL', LOG_STYLES.RED, 'error', `Failed to insert rule for selector "${selector}":`, e);
+            }
         }
 
         _handleAnimationStart(event) {
@@ -1061,16 +1236,23 @@
          * @param {(element: Element) => void} callback
          */
         on(selector, callback) {
+            // Add callback to listeners
             if (!this.listeners.has(selector)) {
                 this.listeners.set(selector, []);
-                this.rules.add(selector);
-
-                // Regenerate and apply all rules to the single style element.
-                const keyframes = `@keyframes ${this.animationName} { from { transform: none; } to { transform: none; } }`;
-                const selectors = Array.from(this.rules).join(', ');
-                this.styleElement.textContent = `${keyframes}\n${selectors} { animation-duration: 0.001s; animation-name: ${this.animationName}; }`;
             }
             this.listeners.get(selector).push(callback);
+
+            // If selector is already registered in rules, do nothing
+            if (this.rules.has(selector)) return;
+
+            this.rules.add(selector);
+
+            // Apply rule
+            if (this.sheet) {
+                this._insertRule(selector);
+            } else {
+                this.pendingRules.push(selector);
+            }
         }
 
         /**
@@ -1088,15 +1270,40 @@
             }
 
             if (newCallbacks.length === 0) {
+                // Remove listener and rule
                 this.listeners.delete(selector);
                 this.rules.delete(selector);
 
-                const keyframes = `@keyframes ${this.animationName} { from { transform: none; } to { transform: none; } }`;
-                const selectors = Array.from(this.rules).join(', ');
-                this.styleElement.textContent = `${keyframes}\n${selectors ? `${selectors} { animation-duration: 0.001s; animation-name: ${this.animationName}; }` : ''}`;
+                if (this.sheet) {
+                    // Iterate backwards to avoid index shifting issues during deletion
+                    for (let i = this.sheet.cssRules.length - 1; i >= 0; i--) {
+                        const rule = this.sheet.cssRules[i];
+                        // Check for custom tag or fallback to selectorText match
+                        // @ts-ignore
+                        if (rule._id === selector || rule.selectorText === selector) {
+                            this.sheet.deleteRule(i);
+                            // We assume one rule per selector, so we can break after deletion
+                            break;
+                        }
+                    }
+                }
             } else {
                 this.listeners.set(selector, newCallbacks);
             }
+        }
+
+        suspend() {
+            if (this.styleElement instanceof HTMLStyleElement) {
+                this.styleElement.disabled = true;
+            }
+            Logger.badge('SENTINEL', LOG_STYLES.GRAY, 'debug', 'Suspended.');
+        }
+
+        resume() {
+            if (this.styleElement instanceof HTMLStyleElement) {
+                this.styleElement.disabled = false;
+            }
+            Logger.badge('SENTINEL', LOG_STYLES.GRAY, 'debug', 'Resumed.');
         }
     }
 
@@ -1120,18 +1327,6 @@
             this.annoyanceManager = new AnnoyanceManager();
             /** @type {Map<string, AbortController>} */
             this.activeDownloads = new Map();
-
-            /**
-             * @private
-             * @const {Object<string, Function>}
-             * Maps button configuration keys to their corresponding bound handler functions.
-             */
-            this.buttonHandlerMap = {
-                [CONSTANTS.BUTTON_KEY.TILE_OPEN]: this._handleOpenInNewTabClick.bind(this),
-                [CONSTANTS.BUTTON_KEY.TILE_DOWNLOAD]: this._handleDownloadClick.bind(this),
-                [CONSTANTS.BUTTON_KEY.PREVIEW_OPEN]: this._handleOpenInNewTabClick.bind(this),
-                [CONSTANTS.BUTTON_KEY.PREVIEW_DOWNLOAD]: this._handleDownloadClick.bind(this),
-            };
         }
 
         /**
@@ -1147,7 +1342,7 @@
             // 3. Initialize UI components (toast container)
             this.ui.init();
 
-            const sentinel = new Sentinel(OWNERID + APPID);
+            const sentinel = new Sentinel(OWNERID);
 
             // 4. Register JS-based annoyance removal
             this.annoyanceManager.removeElements(sentinel);
@@ -1171,7 +1366,7 @@
                 this._onElementFound(
                     element,
                     (id) => id, // Tile ID is the video ID
-                    [CONSTANTS.BUTTON_KEY.TILE_OPEN, CONSTANTS.BUTTON_KEY.TILE_DOWNLOAD]
+                    CONSTANTS.CONTEXT_TYPE.TILE
                 );
             });
 
@@ -1180,7 +1375,7 @@
                 this._onElementFound(
                     element,
                     (id) => id.split('_')[1], // Preview ID is "gif_VIDEOID"
-                    [CONSTANTS.BUTTON_KEY.PREVIEW_OPEN, CONSTANTS.BUTTON_KEY.PREVIEW_DOWNLOAD]
+                    CONSTANTS.CONTEXT_TYPE.PREVIEW
                 );
             });
 
@@ -1191,10 +1386,10 @@
          * Generic handler for found elements (replaces _onTileItemFound and _onPreviewFound).
          * @param {HTMLElement} element The found DOM element.
          * @param {(id: string) => string} idParser A function to extract the video ID from the element's ID.
-         * @param {string[]} buttonKeys An array of keys from CONSTANTS.BUTTON_CONFIGS.
+         * @param {string} type The context type of the element (from CONSTANTS.CONTEXT_TYPE).
          * @private
          */
-        _onElementFound(element, idParser, buttonKeys) {
+        _onElementFound(element, idParser, type) {
             if (!element || !element.id) {
                 return;
             }
@@ -1203,57 +1398,49 @@
 
             // Robust check: Ensure videoId is truthy (not null, undefined, or empty string)
             if (videoId) {
-                this._addButtonsToElement(element, videoId, buttonKeys);
+                this._addButtonsToElement(element, videoId, type);
             }
         }
 
         /**
-         * Adds buttons to a given element based on configuration keys.
+         * Adds buttons to a given element.
          * @param {HTMLElement} element The parent element for the buttons.
          * @param {string} videoId The video ID associated with the buttons.
-         * @param {string[]} buttonKeys An array of keys from CONSTANTS.BUTTON_CONFIGS.
+         * @param {string} type The context type (from CONSTANTS.CONTEXT_TYPE).
          * @private
          */
-        _addButtonsToElement(element, videoId, buttonKeys) {
-            for (const key of buttonKeys) {
-                const config = CONSTANTS.BUTTON_CONFIGS[key];
-                if (!config) {
-                    Logger.warn(`Button configuration for key "${key}" not found.`);
-                    continue;
-                }
+        _addButtonsToElement(element, videoId, type) {
+            const settings = CONSTANTS.USER_SETTINGS;
+            const isTile = type === CONSTANTS.CONTEXT_TYPE.TILE;
 
-                // Get the bound handler from the instance map
-                const boundHandler = this.buttonHandlerMap[key];
-                if (!boundHandler) {
-                    Logger.warn(`Button handler for key "${key}" not found in map.`);
-                    continue;
-                }
+            // --- 1. Open in New Tab Button (Link) ---
+            if (settings.openInNewTab.enabled) {
+                const className = isTile ? `${APPID}-open-in-new-tab-btn` : `${APPID}-preview-open-btn`;
+                const url = `${CONSTANTS.WATCH_URL_BASE}${videoId}`;
 
-                // Create the final click handler, wrapping the bound handler to inject the videoId and event.
-                const clickHandler = (e) => boundHandler(e, videoId);
+                this.ui.createLinkButton({
+                    parentElement: element,
+                    className: className,
+                    title: 'Open in new tab',
+                    iconName: 'OPEN_IN_NEW',
+                    href: url,
+                    clickHandler: (e) => e.stopPropagation(), // Only stop propagation to prevent parent navigation
+                });
+            }
+
+            // --- 2. Download Button (Action) ---
+            {
+                const className = isTile ? `${APPID}-tile-download-btn` : `${APPID}-preview-download-btn`;
+                const clickHandler = (e) => this._handleDownloadClick(e, videoId);
 
                 this.ui.createButton({
                     parentElement: element,
-                    className: config.className,
-                    title: config.title,
-                    iconName: config.iconName,
+                    className: className,
+                    title: 'Download HD Video',
+                    iconName: 'DOWNLOAD',
                     clickHandler: clickHandler,
                 });
             }
-        }
-
-        /**
-         * Handles the click event on the "Open in New Tab" button.
-         * @param {MouseEvent} e - The click event.
-         * @param {string} videoId - The ID of the video to open.
-         * @private
-         */
-        _handleOpenInNewTabClick(e, videoId) {
-            e.preventDefault();
-            e.stopPropagation();
-
-            const url = `${CONSTANTS.WATCH_URL_BASE}${videoId}`;
-            window.open(url, '_blank', 'noopener,noreferrer');
         }
 
         /**
@@ -1380,7 +1567,7 @@
                 id: videoId || '',
             };
 
-            const baseFilename = resolveFilename(CONSTANTS.FILENAME_TEMPLATE, replacements);
+            const baseFilename = resolveFilename(CONSTANTS.USER_SETTINGS.download.filenameTemplate, replacements);
 
             // --- Dynamic Extension ---
             let extension = getExtension(hdUrl);
