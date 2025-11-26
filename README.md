@@ -11,6 +11,9 @@ A collection of simple, single-purpose userscripts for various websites.
 
 ## Recent Updates
 
+### 2025/11/26
+- Updated `RedGIFs Video Download Button` (v1.8.0 -> v1.9.0)  
+
 ### 2025/11/21
 - Updated `RedGIFs Video Download Button` (v1.7.0 -> v1.8.0)  
 
@@ -21,15 +24,6 @@ A collection of simple, single-purpose userscripts for various websites.
 - Updated `YouTube UI Customizer` (v1.1.3 -> v1.2.0)  
 - Updated `YouTube UI Customizer` (v1.1.2 -> v1.1.3)  
 - Updated `RedGIFs Video Download Button` (v1.6.0 -> v1.7.0)  
-
-### 2025/11/16
-- Updated `RedGIFs Video Download Button` (v1.5.0 -> v1.6.0)  
-
-### 2025/11/08
-- Updated `RedGIFs Video Download Button` (v1.4.2 -> v1.5.0)  
-
-### 2025/11/07
-- Updated `RedGIFs Video Download Button` (v1.4.1 -> v1.4.2)  
 
 ---
 
@@ -56,11 +50,11 @@ Click this icon to open the settings panel. From there, you can easily configure
 
 ### 2. RedGIFs Video Download Button
 
-This script enhances your RedGIFs experience by adding two convenient buttons to each video:
+This script enhances your RedGIFs experience by adding convenient buttons to each video:
 1.  **A download button** for one-click downloads of the HD version.
 2.  **An "Open in New Tab" button** to quickly view the video on its own page.
 
-It also includes a powerful **Annoyance & Ad Remover** to clean up the UI.
+It also features **customizable user settings** (e.g., Hover Mode) and a powerful **Annoyance & Ad Remover** to clean up the UI.
 
 > A Note on This Feature:
 > 
@@ -70,7 +64,7 @@ It also includes a powerful **Annoyance & Ad Remover** to clean up the UI.
 
 | Platform | GitHub | Greasy Fork | Version | Last Updated | Changelog |
 | :--- | :--- | :--- | :--- | :--- | :--- |
-| **RedGifs** | [![Download](https://img.shields.io/badge/Download-blue?style=flat-square&logo=download)](https://raw.githubusercontent.com/p65536/Userscripts-Collection/main/scripts/RedGIFs-Video-Download-Button/RedGIFs-Video-Download-Button.user.js) | [![Greasy Fork](https://img.shields.io/badge/Install-green?style=flat-square&logo=greasyfork)](https://greasyfork.org/en/scripts/545472-redgifs-video-download-button) | 1.8.0 | 2025/11/21 | [View](./scripts/RedGIFs-Video-Download-Button/CHANGELOG.md) |
+| **RedGifs** | [![Download](https://img.shields.io/badge/Download-blue?style=flat-square&logo=download)](https://raw.githubusercontent.com/p65536/Userscripts-Collection/main/scripts/RedGIFs-Video-Download-Button/RedGIFs-Video-Download-Button.user.js) | [![Greasy Fork](https://img.shields.io/badge/Install-green?style=flat-square&logo=greasyfork)](https://greasyfork.org/en/scripts/545472-redgifs-video-download-button) | 1.9.0 | 2025/11/26 | [View](./scripts/RedGIFs-Video-Download-Button/CHANGELOG.md) |
 
 ##### Potential Conflict Warning
 

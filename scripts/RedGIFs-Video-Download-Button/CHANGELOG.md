@@ -1,5 +1,14 @@
 # Changelog
 
+## [1.9.0] - 2025-11-26
+- **Feat: Improved "Open in New Tab" button behavior.**
+  - The button is now a standard link (`<a>` tag), restoring native browser behaviors.
+  - You can now use **Middle-Click** or **Ctrl+Click** to open videos in a background tab without switching focus.
+- **Feat: Added customization options (User Settings).**
+  - **Hover Mode:** Added a `showOnlyOnHover` setting to hide buttons by default and only show them when hovering over the video.
+  - **Toggle Button:** Added an option to completely disable the "Open in New Tab" button if you only want the download function.
+  - *(Note: These settings are configurable by editing the script code directly).*
+
 ## [1.8.0] - 2025-11-21
 - **Feat: Added customizable filename templates.**
   - Users can now customize the naming convention for downloaded videos by editing the `FILENAME_TEMPLATE` variable in the script.
