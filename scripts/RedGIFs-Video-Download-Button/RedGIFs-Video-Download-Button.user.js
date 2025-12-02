@@ -1,13 +1,15 @@
 // ==UserScript==
 // @name         RedGIFs Video Download Button
 // @namespace    https://github.com/p65536
-// @version      1.9.0
+// @version      2.0.0
 // @license      MIT
 // @description  Adds a download button (for one-click HD downloads) and an "Open in New Tab" button to each video on the RedGIFs site.
 // @icon         https://www.redgifs.com/favicon.ico
 // @author       p65536
 // @match        https://*.redgifs.com/*
-// @grant        none
+// @grant        GM.getValue
+// @grant        GM.setValue
+// @grant        GM.registerMenuCommand
 // @run-at       document-start
 // @noframes
 // ==/UserScript==
@@ -21,13 +23,38 @@
 
     const OWNERID = 'p65536';
     const APPID = 'rgvdb';
+    const APPNAME = 'RedGIFs Video Download Button';
     const LOG_PREFIX = `[${APPID.toUpperCase()}]`;
 
     // =================================================================================
-    // SECTION: USER SETTINGS (Customizable)
+    // SECTION: Configuration Definitions
     // =================================================================================
 
-    const USER_SETTINGS = {
+    const CONSTANTS = {
+        CONFIG_KEY: `${APPID}_config`,
+        VIDEO_CONTAINER_SELECTOR: '.GifPreview',
+        TILE_ITEM_SELECTOR: '.tileItem',
+        WATCH_URL_BASE: 'https://www.redgifs.com/watch/',
+        TOAST_DURATION: 3000,
+        TOAST_ERROR_DURATION: 6000,
+        TOAST_FADE_OUT_DURATION: 300,
+        ICON_REVERT_DELAY: 2000,
+        CANCEL_LOCK_DURATION: 600, // (ms) Duration to lock download button to prevent mis-click cancel
+        CONTEXT_TYPE: {
+            TILE: 'TILE',
+            PREVIEW: 'PREVIEW',
+        },
+        MODAL: {
+            WIDTH: 400,
+            Z_INDEX: 10001,
+        },
+    };
+
+    /**
+     * Default configuration settings.
+     * Contains the initial values and descriptions for user-configurable options.
+     */
+    const DEFAULT_CONFIG = {
         /**
          * General settings affecting all buttons/UI.
          */
@@ -66,89 +93,28 @@
              */
             enabled: true,
         },
-    };
-
-    // =================================================================================
-    // SECTION: INTERNAL CONSTANTS (Do not modify below this line)
-    // =================================================================================
-
-    const CONSTANTS = {
-        // Maps the standalone settings object here for internal usage.
-        USER_SETTINGS: USER_SETTINGS,
-
-        VIDEO_CONTAINER_SELECTOR: '[id^="gif_"]',
-        TILE_ITEM_SELECTOR: '.tileItem',
-        WATCH_URL_BASE: 'https://www.redgifs.com/watch/',
-        TOAST_DURATION: 3000,
-        TOAST_ERROR_DURATION: 6000,
-        TOAST_FADE_OUT_DURATION: 300,
-        ICON_REVERT_DELAY: 2000,
-        CANCEL_LOCK_DURATION: 600, // (ms) Duration to lock download button to prevent mis-click cancel
 
         /**
-         * @enum {string}
-         * Defines the context where buttons are added.
+         * Developer settings for debugging.
          */
-        CONTEXT_TYPE: {
-            TILE: 'TILE',
-            PREVIEW: 'PREVIEW',
+        developer: {
+            /**
+             * Controls the verbosity of logs in the console.
+             * Options: 'error', 'warn', 'info', 'log', 'debug'
+             */
+            logger_level: 'log',
         },
     };
-    const BASE_ICON_PROPS = {
-        xmlns: 'http://www.w3.org/2000/svg',
-        height: '24px',
-        viewBox: '0 0 24 24',
-        width: '24px',
-        fill: '#e3e3e3',
-    };
-    const ICONS = {
-        DOWNLOAD: {
-            tag: 'svg',
-            props: BASE_ICON_PROPS,
-            children: [
-                { tag: 'path', props: { d: 'M0 0h24v24H0V0z', fill: 'none' } },
-                { tag: 'path', props: { d: 'M19 9h-4V3H9v6H5l7 7 7-7zm-8 2V5h2v6h1.17L12 13.17 9.83 11H11zm-6 7h14v2H5z' } },
-            ],
-        },
-        SPINNER: {
-            tag: 'svg',
-            props: { ...BASE_ICON_PROPS, class: `${APPID}-spinner` },
-            children: [
-                { tag: 'path', props: { d: 'M12,2A10,10,0,1,0,22,12,10,10,0,0,0,12,2Zm0,18A8,8,0,1,1,20,12,8,8,0,0,1,12,20Z', opacity: '0.3' } },
-                { tag: 'path', props: { d: 'M12,2A10,10,0,0,1,22,12h-2A8,8,0,0,0,12,4Z' } },
-            ],
-        },
-        SUCCESS: {
-            tag: 'svg',
-            props: BASE_ICON_PROPS,
-            children: [
-                { tag: 'path', props: { d: 'M0 0h24v24H0V0z', fill: 'none' } },
-                { tag: 'path', props: { d: 'M9 16.2L4.8 12l-1.4 1.4L9 19 21 7l-1.4-1.4L9 16.2z' } },
-            ],
-        },
-        ERROR: {
-            tag: 'svg',
-            props: BASE_ICON_PROPS,
-            children: [
-                { tag: 'path', props: { d: 'M0 0h24v24H0V0z', fill: 'none' } },
-                { tag: 'path', props: { d: 'M19 6.41L17.59 5 12 10.59 6.41 5 5 6.41 10.59 12 5 17.59 6.41 19 12 13.41 17.59 19 19 17.59 13.41 12 19 6.41z' } },
-            ],
-        },
-        OPEN_IN_NEW: {
-            tag: 'svg',
-            props: BASE_ICON_PROPS,
-            children: [
-                { tag: 'path', props: { d: 'M0 0h24v24H0V0z', fill: 'none' } },
-                { tag: 'path', props: { d: 'M19 19H5V5h7V3H5c-1.11 0-2 .9-2 2v14c0 1.1.89 2 2 2h14c1.1 0 2-.9 2-2v-7h-2v7zM14 3v2h3.59l-9.83 9.83 1.41 1.41L19 6.41V10h2V3h-7z' } },
-            ],
-        },
+
+    const EVENTS = {
+        CONFIG_UPDATED: `${APPID}:configUpdated`,
+        CONFIG_SAVE_SUCCESS: `${APPID}:configSaveSuccess`,
     };
 
     // =================================================================================
     // SECTION: Style Definitions
     // =================================================================================
-
-    const STYLES = `
+    const UI_STYLES_TEMPLATE = `
         /* Open in New Tab Button on Thumbnails */
         ${CONSTANTS.TILE_ITEM_SELECTOR} {
             position: relative;
@@ -296,8 +262,298 @@
         }
     `;
 
+    // Dark theme styles specifically for the settings modal
+    const MODAL_STYLES = `
+        .${APPID}-modal-overlay {
+            position: fixed; top: 0; left: 0; width: 100%; height: 100%;
+            background: rgba(0, 0, 0, 0.7);
+            z-index: ${CONSTANTS.MODAL.Z_INDEX};
+            display: flex; align-items: center; justify-content: center;
+        }
+        .${APPID}-modal-box {
+            background: #222; color: #eee;
+            width: ${CONSTANTS.MODAL.WIDTH}px;
+            max-width: 90vw;
+            border: 1px solid #444;
+            border-radius: 8px;
+            box-shadow: 0 4px 16px rgba(0,0,0,0.5);
+            display: flex; flex-direction: column;
+            font-family: sans-serif; font-size: 14px;
+        }
+        .${APPID}-modal-header {
+            padding: 12px 16px;
+            font-size: 1.1em; font-weight: bold;
+            border-bottom: 1px solid #444;
+            display: flex; justify-content: space-between; align-items: center;
+        }
+        .${APPID}-modal-content {
+            padding: 16px;
+            overflow-y: auto;
+            max-height: 80vh;
+        }
+        .${APPID}-modal-footer {
+            padding: 12px 16px;
+            border-top: 1px solid #444;
+            display: flex; justify-content: space-between;
+            align-items: center;
+        }
+        .${APPID}-footer-actions {
+            display: flex; gap: 8px;
+        }
+        .${APPID}-form-group {
+            margin-bottom: 16px;
+        }
+        .${APPID}-form-label {
+            display: block; margin-bottom: 6px; font-weight: 500; color: #ccc;
+        }
+        .${APPID}-form-desc {
+            font-size: 0.85em; color: #999; margin-bottom: 6px;
+        }
+        .${APPID}-form-input {
+            width: 100%; padding: 6px 8px;
+            background: #333; border: 1px solid #555; border-radius: 4px;
+            color: #fff; box-sizing: border-box;
+        }
+        .${APPID}-form-input:focus {
+            border-color: #007bff; outline: none;
+        }
+        .${APPID}-checkbox-wrapper {
+            display: flex; align-items: center; gap: 8px;
+        }
+        .${APPID}-btn {
+            padding: 6px 16px; border-radius: 4px; border: none;
+            cursor: pointer; font-size: 14px; font-weight: 500;
+            transition: background 0.2s;
+        }
+        .${APPID}-btn-primary {
+            background: #007bff; color: white;
+        }
+        .${APPID}-btn-primary:hover { background: #0056b3; }
+        .${APPID}-btn-secondary {
+            background: #555; color: white;
+        }
+        .${APPID}-btn-secondary:hover { background: #444; }
+
+        /* New Styles for Preview and Warning */
+        .${APPID}-input-preview-label {
+            display: block; font-size: 0.85em; color: #888; margin-top: 12px;
+        }
+        .${APPID}-input-preview-content {
+            display: block; font-size: 1.2em; color: #eee; margin-top: 4px; font-family: monospace; word-break: break-all;
+            transition: color 0.2s;
+        }
+        .${APPID}-preview-valid {
+            color: #4cd964 !important; /* Pastel Green for valid state */
+        }
+        .${APPID}-preview-error {
+            color: #ff6b6b !important; /* Soft Red for error (forbidden chars) */
+        }
+        .${APPID}-preview-fallback {
+            color: #ffb74d !important; /* Soft Orange for fallback state */
+        }
+        .${APPID}-text-warning {
+            display: none; font-size: 0.85em; color: #ffc107; margin-top: 4px;
+        }
+    `;
+
+    // =================================================================================
+    // SECTION: Icon Definitions
+    // =================================================================================
+
+    const BASE_ICON_PROPS = {
+        xmlns: 'http://www.w3.org/2000/svg',
+        height: '24px',
+        viewBox: '0 0 24 24',
+        width: '24px',
+        fill: '#e3e3e3',
+    };
+    const ICONS = {
+        DOWNLOAD: {
+            tag: 'svg',
+            props: BASE_ICON_PROPS,
+            children: [
+                { tag: 'path', props: { d: 'M0 0h24v24H0V0z', fill: 'none' } },
+                { tag: 'path', props: { d: 'M19 9h-4V3H9v6H5l7 7 7-7zm-8 2V5h2v6h1.17L12 13.17 9.83 11H11zm-6 7h14v2H5z' } },
+            ],
+        },
+        SPINNER: {
+            tag: 'svg',
+            props: { ...BASE_ICON_PROPS, class: `${APPID}-spinner` },
+            children: [
+                { tag: 'path', props: { d: 'M12,2A10,10,0,1,0,22,12,10,10,0,0,0,12,2Zm0,18A8,8,0,1,1,20,12,8,8,0,0,1,12,20Z', opacity: '0.3' } },
+                { tag: 'path', props: { d: 'M12,2A10,10,0,0,1,22,12h-2A8,8,0,0,0,12,4Z' } },
+            ],
+        },
+        SUCCESS: {
+            tag: 'svg',
+            props: BASE_ICON_PROPS,
+            children: [
+                { tag: 'path', props: { d: 'M0 0h24v24H0V0z', fill: 'none' } },
+                { tag: 'path', props: { d: 'M9 16.2L4.8 12l-1.4 1.4L9 19 21 7l-1.4-1.4L9 16.2z' } },
+            ],
+        },
+        ERROR: {
+            tag: 'svg',
+            props: BASE_ICON_PROPS,
+            children: [
+                { tag: 'path', props: { d: 'M0 0h24v24H0V0z', fill: 'none' } },
+                { tag: 'path', props: { d: 'M19 6.41L17.59 5 12 10.59 6.41 5 5 6.41 10.59 12 5 17.59 6.41 19 12 13.41 17.59 19 19 17.59 13.41 12 19 6.41z' } },
+            ],
+        },
+        OPEN_IN_NEW: {
+            tag: 'svg',
+            props: BASE_ICON_PROPS,
+            children: [
+                { tag: 'path', props: { d: 'M0 0h24v24H0V0z', fill: 'none' } },
+                { tag: 'path', props: { d: 'M19 19H5V5h7V3H5c-1.11 0-2 .9-2 2v14c0 1.1.89 2 2 2h14c1.1 0 2-.9 2-2v-7h-2v7zM14 3v2h3.59l-9.83 9.83 1.41 1.41L19 6.41V10h2V3h-7z' } },
+            ],
+        },
+    };
+
+    // =================================================================================
+    // SECTION: Logging Utility
+    // Description: Centralized logging interface for consistent log output across modules.
+    //              Handles log level control, message formatting, and console API wrapping.
+    // =================================================================================
+
+    // Style definitions for styled Logger.badge()
+    const LOG_STYLES = {
+        BASE: 'color: white; padding: 2px 6px; border-radius: 4px; font-weight: bold;',
+        BLUE: 'background: #007bff;',
+        GREEN: 'background: #28a745;',
+        YELLOW: 'background: #ffc107; color: black;',
+        RED: 'background: #dc3545;',
+    };
+
+    class Logger {
+        /** @property {object} levels - Defines the numerical hierarchy of log levels. */
+        static levels = {
+            error: 0,
+            warn: 1,
+            info: 2,
+            log: 3,
+            debug: 4,
+        };
+        /** @property {string} level - The current active log level. */
+        static level = 'log'; // Default level
+
+        /**
+         * Sets the current log level.
+         * @param {string} level The new log level. Must be one of 'error', 'warn', 'info', 'log', 'debug'.
+         */
+        static setLevel(level) {
+            if (Object.prototype.hasOwnProperty.call(this.levels, level)) {
+                this.level = level;
+                Logger.badge('LOG LEVEL', LOG_STYLES.BLUE, 'log', `Logger level is set to '${this.level}'.`);
+            } else {
+                Logger.badge('INVALID LEVEL', LOG_STYLES.YELLOW, 'warn', `Invalid log level "${level}". Valid levels are: ${Object.keys(this.levels).join(', ')}. Level not changed.`);
+            }
+        }
+
+        /** @param {...any} args The messages or objects to log. */
+        static error(...args) {
+            if (this.levels[this.level] >= this.levels.error) {
+                console.error(LOG_PREFIX, ...args);
+            }
+        }
+
+        /** @param {...any} args The messages or objects to log. */
+        static warn(...args) {
+            if (this.levels[this.level] >= this.levels.warn) {
+                console.warn(LOG_PREFIX, ...args);
+            }
+        }
+
+        /** @param {...any} args The messages or objects to log. */
+        static info(...args) {
+            if (this.levels[this.level] >= this.levels.info) {
+                console.info(LOG_PREFIX, ...args);
+            }
+        }
+
+        /** @param {...any} args The messages or objects to log. */
+        static log(...args) {
+            if (this.levels[this.level] >= this.levels.log) {
+                console.log(LOG_PREFIX, ...args);
+            }
+        }
+
+        /**
+         * Logs messages for debugging. Only active in 'debug' level.
+         * @param {...any} args The messages or objects to log.
+         */
+        static debug(...args) {
+            if (this.levels[this.level] >= this.levels.debug) {
+                // Use console.debug for better filtering in browser dev tools.
+                console.debug(LOG_PREFIX, ...args);
+            }
+        }
+
+        /**
+         * Starts a timer for performance measurement. Only active in 'debug' level.
+         * @param {string} label The label for the timer.
+         */
+        static time(label) {
+            if (this.levels[this.level] >= this.levels.debug) {
+                console.time(`${LOG_PREFIX} ${label}`);
+            }
+        }
+
+        /**
+         * Ends a timer and logs the elapsed time. Only active in 'debug' level.
+         * @param {string} label The label for the timer, must match the one used in time().
+         */
+        static timeEnd(label) {
+            if (this.levels[this.level] >= this.levels.debug) {
+                console.timeEnd(`${LOG_PREFIX} ${label}`);
+            }
+        }
+
+        /**
+         * @param {...any} args The title for the log group.
+         * @returns {void}
+         */
+        static group = (...args) => console.group(LOG_PREFIX, ...args);
+        /**
+         * @param {...any} args The title for the collapsed log group.
+         * @returns {void}
+         */
+        static groupCollapsed = (...args) => console.groupCollapsed(LOG_PREFIX, ...args);
+        /**
+         * Closes the current log group.
+         * @returns {void}
+         */
+        static groupEnd = () => console.groupEnd();
+
+        /**
+         * Logs a message with a styled badge for better visibility.
+         * @param {string} badgeText - The text inside the badge.
+         * @param {string} badgeStyle - The background-color style (from LOG_STYLES).
+         * @param {'log'|'warn'|'error'|'info'|'debug'} level - The console log level.
+         * @param {...any} args - Additional messages to log after the badge.
+         */
+        static badge(badgeText, badgeStyle, level, ...args) {
+            if (this.levels[this.level] < this.levels[level]) {
+                return; // Respect the current log level
+            }
+
+            const style = `${LOG_STYLES.BASE} ${badgeStyle}`;
+            const consoleMethod = console[level] || console.log;
+
+            consoleMethod(
+                `%c${LOG_PREFIX}%c %c${badgeText}%c`,
+                'font-weight: bold;', // Style for the prefix
+                'color: inherit;', // Reset for space
+                style, // Style for the badge
+                'color: inherit;', // Reset for the rest of the message
+                ...args
+            );
+        }
+    }
+
     // =================================================================================
     // SECTION: Execution Guard
+    // Description: Prevents the script from being executed multiple times per page.
     // =================================================================================
 
     class ExecutionGuard {
@@ -324,53 +580,7 @@
     }
 
     // =================================================================================
-    // SECTION: Logging Utility
-    // =================================================================================
-
-    // Style definitions for styled Logger.badge()
-    const LOG_STYLES = {
-        BASE: 'color: white; padding: 2px 6px; border-radius: 4px; font-weight: bold;',
-        INFO: 'background: #007bff;',
-        LOG: 'background: #28a745;',
-        WARN: 'background: #ffc107; color: black;',
-        ERROR: 'background: #dc3545;',
-    };
-
-    class Logger {
-        static log(...args) {
-            console.log(LOG_PREFIX, ...args);
-        }
-        static warn(...args) {
-            console.warn(LOG_PREFIX, ...args);
-        }
-        static error(...args) {
-            console.error(LOG_PREFIX, ...args);
-        }
-
-        /**
-         * Logs a message with a styled badge for better visibility.
-         * @param {string} badgeText - The text inside the badge.
-         * @param {string} badgeStyle - The background-color style (from LOG_STYLES).
-         * @param {'log'|'warn'|'error'} level - The console log level.
-         * @param {...any} args - Additional messages to log after the badge.
-         */
-        static badge(badgeText, badgeStyle, level, ...args) {
-            const style = `${LOG_STYLES.BASE} ${badgeStyle}`;
-            const consoleMethod = console[level] || console.log;
-
-            consoleMethod(
-                `%c${LOG_PREFIX}%c %c${badgeText}%c`,
-                'font-weight: bold;', // Style for the prefix
-                'color: inherit;', // Reset for space
-                style, // Style for the badge
-                'color: inherit;', // Reset for the rest of the message
-                ...args
-            );
-        }
-    }
-
-    // =================================================================================
-    // SECTION: Utility Functions
+    // SECTION: General Utilities
     // =================================================================================
 
     /**
@@ -428,11 +638,11 @@
                         el.setAttribute(key, url);
                     } else {
                         el.setAttribute(key, '#');
-                        Logger.warn(`Blocked potentially unsafe protocol "${parsedUrl.protocol}" in attribute "${key}":`, url);
+                        Logger.badge('UNSAFE URL', LOG_STYLES.YELLOW, 'warn', `Blocked potentially unsafe protocol "${parsedUrl.protocol}" in attribute "${key}":`, url);
                     }
                 } catch {
                     el.setAttribute(key, '#');
-                    Logger.warn(`Blocked invalid or relative URL in attribute "${key}":`, url);
+                    Logger.badge('INVALID URL', LOG_STYLES.YELLOW, 'warn', `Blocked invalid or relative URL in attribute "${key}":`, url);
                 }
             }
             // 2. Direct property assignments.
@@ -446,8 +656,10 @@
                 for (const [dataKey, dataVal] of Object.entries(value)) {
                     el.dataset[dataKey] = dataVal;
                 }
-            } else if (key.startsWith('on') && typeof value === 'function') {
-                el.addEventListener(key.slice(2).toLowerCase(), value);
+            } else if (key.startsWith('on')) {
+                if (typeof value === 'function') {
+                    el.addEventListener(key.slice(2).toLowerCase(), value);
+                }
             } else if (key === 'className') {
                 const classes = String(value).trim();
                 if (classes) {
@@ -485,6 +697,84 @@
         el.appendChild(fragment);
 
         return el;
+    }
+
+    /**
+     * Recursively builds a DOM element from a definition object using the h() function.
+     * @param {object} def The definition object for the element.
+     * @returns {HTMLElement | SVGElement | null} The created DOM element.
+     */
+    function createIconFromDef(def) {
+        if (!def) return null;
+        const children = def.children ? def.children.map((child) => createIconFromDef(child)) : [];
+        return h(def.tag, def.props, children);
+    }
+
+    const CACHED_ICONS = (() => {
+        const cache = {};
+        for (const key in ICONS) {
+            cache[key] = createIconFromDef(ICONS[key]);
+        }
+        return cache;
+    })();
+
+    /**
+     * Helper function to check if an item is a non-array object.
+     * @param {*} item The item to check.
+     * @returns {boolean}
+     */
+    function isObject(item) {
+        return !!(item && typeof item === 'object' && !Array.isArray(item));
+    }
+
+    /**
+     * Creates a deep copy of a JSON-serializable object.
+     * @template T
+     * @param {T} obj The object to clone.
+     * @returns {T} The deep copy of the object.
+     */
+    function deepClone(obj) {
+        return structuredClone(obj);
+    }
+
+    /**
+     * Recursively resolves the configuration by overlaying source properties onto the target object.
+     * The target object is mutated. This handles recursive updates for nested objects but overwrites arrays/primitives.
+     *
+     * [MERGE BEHAVIOR]
+     * Keys present in 'source' but missing in 'target' are ignored.
+     * The 'target' object acts as a schema; it must contain all valid keys.
+     *
+     * @param {object} target The target object (e.g., a deep copy of default config).
+     * @param {object} source The source object (e.g., user config).
+     * @returns {object} The mutated target object.
+     */
+    function resolveConfig(target, source) {
+        for (const key in source) {
+            // Security: Prevent prototype pollution
+            if (key === '__proto__' || key === 'constructor' || key === 'prototype') {
+                continue;
+            }
+
+            if (Object.prototype.hasOwnProperty.call(source, key)) {
+                // Strict check: Ignore keys that do not exist in the target (default config).
+                if (!Object.prototype.hasOwnProperty.call(target, key)) {
+                    continue;
+                }
+
+                const sourceVal = source[key];
+                const targetVal = target[key];
+
+                if (isObject(sourceVal) && isObject(targetVal)) {
+                    // If both are objects, recurse
+                    resolveConfig(targetVal, sourceVal);
+                } else if (typeof sourceVal !== 'undefined') {
+                    // Otherwise, overwrite or set the value from the source
+                    target[key] = sourceVal;
+                }
+            }
+        }
+        return target;
     }
 
     /**
@@ -530,25 +820,6 @@
             return ''; // Return empty on URL parsing failure
         }
     }
-
-    /**
-     * Recursively builds a DOM element from a definition object using the h() function.
-     * @param {object} def The definition object for the element.
-     * @returns {HTMLElement | SVGElement | null} The created DOM element.
-     */
-    function createIconFromDef(def) {
-        if (!def) return null;
-        const children = def.children ? def.children.map((child) => createIconFromDef(child)) : [];
-        return h(def.tag, def.props, children);
-    }
-
-    const CACHED_ICONS = (() => {
-        const cache = {};
-        for (const key in ICONS) {
-            cache[key] = createIconFromDef(ICONS[key]);
-        }
-        return cache;
-    })();
 
     /**
      * Resolves a filename template with provided replacements, handling sanitization.
@@ -600,6 +871,523 @@
     }
 
     // =================================================================================
+    // SECTION: Event-Driven Architecture (Pub/Sub)
+    // Description: A event bus for decoupled communication between classes.
+    // =================================================================================
+
+    const EventBus = {
+        events: {},
+        uiWorkQueue: [],
+        isUiWorkScheduled: false,
+        _logAggregation: {},
+        // prettier-ignore
+        _aggregatedEvents: new Set([
+            EVENTS.UI_REPOSITION,
+        ]),
+        _aggregationDelay: 500, // ms
+
+        /**
+         * Subscribes a listener to an event using a unique key.
+         * If a subscription with the same event and key already exists, it will be overwritten.
+         * @param {string} event The event name.
+         * @param {Function} listener The callback function.
+         * @param {string} key A unique key for this subscription (e.g., 'ClassName.methodName').
+         */
+        subscribe(event, listener, key) {
+            if (!key) {
+                Logger.error('EventBus.subscribe requires a unique key.');
+                return;
+            }
+            if (!this.events[event]) {
+                this.events[event] = new Map();
+            }
+            this.events[event].set(key, listener);
+        },
+        /**
+         * Subscribes a listener that will be automatically unsubscribed after one execution.
+         * @param {string} event The event name.
+         * @param {Function} listener The callback function.
+         * @param {string} key A unique key for this subscription.
+         */
+        once(event, listener, key) {
+            if (!key) {
+                Logger.error('EventBus.once requires a unique key.');
+                return;
+            }
+            const onceListener = (...args) => {
+                this.unsubscribe(event, key);
+                listener(...args);
+            };
+            this.subscribe(event, onceListener, key);
+        },
+        /**
+         * Unsubscribes a listener from an event using its unique key.
+         * @param {string} event The event name.
+         * @param {string} key The unique key used during subscription.
+         */
+        unsubscribe(event, key) {
+            if (!this.events[event] || !key) {
+                return;
+            }
+            this.events[event].delete(key);
+            if (this.events[event].size === 0) {
+                delete this.events[event];
+            }
+        },
+        /**
+         * Publishes an event, calling all subscribed listeners with the provided data.
+         * @param {string} event The event name.
+         * @param {...any} args The data to pass to the listeners.
+         */
+        publish(event, ...args) {
+            if (!this.events[event]) {
+                return;
+            }
+
+            if (Logger.levels[Logger.level] >= Logger.levels.debug) {
+                // --- Aggregation logic START ---
+                if (this._aggregatedEvents.has(event)) {
+                    if (!this._logAggregation[event]) {
+                        this._logAggregation[event] = { timer: null, count: 0 };
+                    }
+                    const aggregation = this._logAggregation[event];
+                    aggregation.count++;
+
+                    clearTimeout(aggregation.timer);
+                    aggregation.timer = setTimeout(() => {
+                        const finalCount = this._logAggregation[event]?.count || 0;
+                        if (finalCount > 0) {
+                            console.log(LOG_PREFIX, `Event Published: ${event} (x${finalCount})`);
+                        }
+                        delete this._logAggregation[event];
+                    }, this._aggregationDelay);
+
+                    // Execute subscribers for the aggregated event, but without the verbose individual logs.
+                    [...this.events[event].values()].forEach((listener) => {
+                        try {
+                            listener(...args);
+                        } catch (e) {
+                            Logger.error(`EventBus error in listener for event "${event}":`, e);
+                        }
+                    });
+                    return; // End execution here for aggregated events in debug mode.
+                }
+                // --- Aggregation logic END ---
+
+                // In debug mode, provide detailed logging for NON-aggregated events.
+                const subscriberKeys = [...this.events[event].keys()];
+
+                // Use groupCollapsed for a cleaner default view
+                console.groupCollapsed(LOG_PREFIX, `Event Published: ${event}`);
+
+                if (args.length > 0) {
+                    console.log('  - Payload:', ...args);
+                } else {
+                    console.log('  - Payload: (No data)');
+                }
+
+                // Displaying subscribers helps in understanding the event's impact.
+                if (subscriberKeys.length > 0) {
+                    console.log('  - Subscribers:\n' + subscriberKeys.map((key) => `    > ${key}`).join('\n'));
+                } else {
+                    console.log('  - Subscribers: (None)');
+                }
+
+                // Iterate with keys for better logging
+                this.events[event].forEach((listener, key) => {
+                    try {
+                        // Log which specific subscriber is being executed
+                        Logger.debug(`-> Executing: ${key}`);
+                        listener(...args);
+                    } catch (e) {
+                        // Enhance error logging with the specific subscriber key
+                        Logger.badge('LISTENER ERROR', LOG_STYLES.RED, 'error', `Listener "${key}" failed for event "${event}":`, e);
+                    }
+                });
+
+                console.groupEnd();
+            } else {
+                // Iterate over a copy of the values in case a listener unsubscribes itself.
+                [...this.events[event].values()].forEach((listener) => {
+                    try {
+                        listener(...args);
+                    } catch (e) {
+                        Logger.badge('LISTENER ERROR', LOG_STYLES.RED, 'error', `Listener failed for event "${event}":`, e);
+                    }
+                });
+            }
+        },
+
+        /**
+         * Queues a function to be executed on the next animation frame.
+         * Batches multiple UI updates into a single repaint cycle.
+         * @param {Function} workFunction The function to execute.
+         */
+        queueUIWork(workFunction) {
+            this.uiWorkQueue.push(workFunction);
+            if (!this.isUiWorkScheduled) {
+                this.isUiWorkScheduled = true;
+                requestAnimationFrame(this._processUIWorkQueue.bind(this));
+            }
+        },
+
+        /**
+         * @private
+         * Processes all functions in the UI work queue.
+         */
+        _processUIWorkQueue() {
+            // Prevent modifications to the queue while processing.
+            const queueToProcess = [...this.uiWorkQueue];
+            this.uiWorkQueue.length = 0;
+
+            for (const work of queueToProcess) {
+                try {
+                    work();
+                } catch (e) {
+                    Logger.badge('UI QUEUE ERROR', LOG_STYLES.RED, 'error', 'Error in queued UI work:', e);
+                }
+            }
+            this.isUiWorkScheduled = false;
+        },
+    };
+
+    /**
+     * Creates a unique, consistent event subscription key for EventBus.
+     * @param {object} context The `this` context of the subscribing class instance.
+     * @param {string} eventName The full event name from the EVENTS constant (e.g., 'EVENTS.NAVIGATION').
+     * @returns {string} A key in the format 'ClassName.purpose'.
+     */
+    function createEventKey(context, eventName) {
+        // Extract a meaningful 'purpose' from the event name
+        const parts = eventName.split(':');
+        const purpose = parts.length > 1 ? parts.slice(1).join('_') : parts[0]; // Use underscores if there are multiple parts after the first colon
+
+        if (!context || !context.constructor || !context.constructor.name) {
+            // Fallback for contexts where constructor name might not be available
+            return `UnknownContext.${purpose}`;
+        }
+        return `${context.constructor.name}.${purpose}`;
+    }
+
+    // =================================================================================
+    // SECTION: Configuration Management
+    // =================================================================================
+
+    const ConfigProcessor = {
+        /**
+         * Processes and sanitizes an entire configuration object.
+         * @param {object|null} userConfig The user configuration object (partial or full).
+         * @returns {object} The complete, sanitized configuration object.
+         */
+        process(userConfig) {
+            // 1. Start with a deep copy of the defaults.
+            const completeConfig = deepClone(DEFAULT_CONFIG);
+
+            if (userConfig) {
+                // 2. Merge user config
+                resolveConfig(completeConfig, userConfig);
+            }
+
+            return completeConfig;
+        },
+    };
+
+    class ConfigManager {
+        constructor() {
+            /** @type {object|null} */
+            this.config = null;
+        }
+
+        /**
+         * Loads the configuration from storage asynchronously.
+         * Assumes the configuration is stored as a JSON string.
+         * @returns {Promise<void>}
+         */
+        async load() {
+            const raw = await GM.getValue(CONSTANTS.CONFIG_KEY, null);
+            let userConfig = null;
+            if (raw) {
+                try {
+                    userConfig = JSON.parse(raw);
+                } catch (e) {
+                    Logger.error('Failed to parse configuration. Using default settings.', e);
+                }
+            }
+            this.config = ConfigProcessor.process(userConfig);
+            // Apply logger level immediately
+            Logger.setLevel(this.config.developer.logger_level);
+        }
+
+        /**
+         * Saves the configuration object to storage as a JSON string.
+         * @param {object} newConfig The configuration object to save.
+         * @returns {Promise<void>}
+         */
+        async save(newConfig) {
+            const completeConfig = ConfigProcessor.process(newConfig);
+            await GM.setValue(CONSTANTS.CONFIG_KEY, JSON.stringify(completeConfig));
+            this.config = completeConfig;
+
+            // Apply new settings
+            Logger.setLevel(this.config.developer.logger_level);
+
+            // Notify other components
+            EventBus.publish(EVENTS.CONFIG_UPDATED, this.config);
+            EventBus.publish(EVENTS.CONFIG_SAVE_SUCCESS);
+        }
+
+        /**
+         * @returns {object} The current configuration object.
+         */
+        get() {
+            return this.config || deepClone(DEFAULT_CONFIG);
+        }
+    }
+
+    // =================================================================================
+    // SECTION: Settings Modal
+    // =================================================================================
+
+    class SettingsModal {
+        /**
+         * @param {ConfigManager} configManager
+         */
+        constructor(configManager) {
+            this.configManager = configManager;
+            this.overlay = null;
+            // Bind the keydown handler once to ensure consistent reference for add/removeEventListener
+            this._boundHandleKeyDown = this._handleKeyDown.bind(this);
+        }
+
+        /**
+         * Opens the settings modal.
+         */
+        open() {
+            if (this.overlay) return;
+            const config = this.configManager.get();
+
+            // Create input elements
+            const filenameInput = h(`input#${APPID}-input-filename.${APPID}-form-input`, {
+                type: 'text',
+                value: config.download.filenameTemplate,
+            });
+
+            const warningText = h(`div#${APPID}-warning-text.${APPID}-text-warning`, 'Forbidden characters will be removed.');
+            const previewLabel = h(`div.${APPID}-input-preview-label`, 'Preview:');
+            const previewContent = h(`div#${APPID}-preview-content.${APPID}-input-preview-content`, '');
+
+            // Attach input listener for real-time preview
+            filenameInput.addEventListener('input', () => {
+                this._updatePreview(filenameInput.value, warningText, previewContent);
+            });
+
+            this.overlay = h(
+                `div.${APPID}-modal-overlay`,
+                {
+                    // Click handler for closing when clicking outside (on the overlay)
+                    onclick: (e) => {
+                        if (e.target === this.overlay) this.close();
+                    },
+                },
+                [
+                    h(`div.${APPID}-modal-box`, [
+                        // Header
+                        h(`div.${APPID}-modal-header`, [h('span', `${APPNAME} Settings`)]),
+                        // Content
+                        h(`div.${APPID}-modal-content`, [
+                            this._createFormGroup(
+                                'Filename Template',
+                                null, // Desc is moved inside the control wrapper
+                                // Wrap input and feedback elements together
+                                h('div', [h(`div.${APPID}-form-desc`, 'Available placeholders: {user}, {date}, {id}'), filenameInput, warningText, previewLabel, previewContent])
+                            ),
+                            this._createFormGroup(
+                                'Appearance',
+                                '',
+                                h(`label.${APPID}-checkbox-wrapper`, [
+                                    h(`input#${APPID}-input-hover`, {
+                                        type: 'checkbox',
+                                        checked: config.common.showOnlyOnHover,
+                                    }),
+                                    h('span', 'Show buttons only on hover (Desktop)'),
+                                ])
+                            ),
+                            this._createFormGroup(
+                                'Functionality',
+                                '',
+                                h(`label.${APPID}-checkbox-wrapper`, [
+                                    h(`input#${APPID}-input-newtab`, {
+                                        type: 'checkbox',
+                                        checked: config.openInNewTab.enabled,
+                                    }),
+                                    h('span', 'Enable "Open in New Tab" button'),
+                                ])
+                            ),
+                        ]),
+                        // Footer
+                        h(`div.${APPID}-modal-footer`, [
+                            // Left: Restore Defaults
+                            h(`button.${APPID}-btn.${APPID}-btn-secondary`, { onclick: () => this._restoreDefaults() }, 'Restore Defaults'),
+                            // Right: Actions
+                            h(`div.${APPID}-footer-actions`, [
+                                h(`button.${APPID}-btn.${APPID}-btn-secondary`, { onclick: () => this.close() }, 'Cancel'),
+                                h(`button.${APPID}-btn.${APPID}-btn-primary`, { onclick: () => this.save() }, 'Save'),
+                            ]),
+                        ]),
+                    ]),
+                ]
+            );
+
+            document.body.appendChild(this.overlay);
+
+            // Add global key listener for ESC
+            document.addEventListener('keydown', this._boundHandleKeyDown);
+
+            // Trigger initial preview
+            this._updatePreview(filenameInput.value, warningText, previewContent);
+
+            // Set initial focus
+            filenameInput.focus();
+        }
+
+        /**
+         * Closes the settings modal.
+         */
+        close() {
+            if (this.overlay) {
+                // Remove global key listener
+                document.removeEventListener('keydown', this._boundHandleKeyDown);
+
+                this.overlay.remove();
+                this.overlay = null;
+            }
+        }
+
+        /**
+         * Saves the current settings from the form.
+         */
+        async save() {
+            const newConfig = this.configManager.get();
+
+            // Collect values from DOM
+            const filenameInput = document.getElementById(`${APPID}-input-filename`);
+            const hoverInput = document.getElementById(`${APPID}-input-hover`);
+            const newTabInput = document.getElementById(`${APPID}-input-newtab`);
+
+            if (filenameInput) newConfig.download.filenameTemplate = filenameInput.value;
+            if (hoverInput) newConfig.common.showOnlyOnHover = hoverInput.checked;
+            if (newTabInput) newConfig.openInNewTab.enabled = newTabInput.checked;
+
+            await this.configManager.save(newConfig);
+            this.close();
+        }
+
+        /**
+         * Updates the preview text and warning based on the input template.
+         * @private
+         */
+        _updatePreview(template, warningEl, previewEl) {
+            const dummyReplacements = {
+                user: 'RedGifsOfficial',
+                date: '20250101_120000',
+                id: 'watchfulwaiting',
+            };
+
+            // Resolve filename using dummy data
+            const resolved = resolveFilename(template, dummyReplacements);
+            // Append example extension
+            const previewFilename = `${resolved}.mp4`;
+
+            // Reset classes and state
+            previewEl.classList.remove(`${APPID}-preview-valid`, `${APPID}-preview-error`, `${APPID}-preview-fallback`);
+            warningEl.style.display = 'none';
+            warningEl.textContent = '';
+
+            // 1. Check for fallback triggers (Unbalanced brackets or Empty)
+            // Note: resolveFilename handles this internally, but we check here to provide UI feedback.
+            const openCount = (template.match(/\{/g) || []).length;
+            const closeCount = (template.match(/\}/g) || []).length;
+            const isUnbalanced = openCount !== closeCount;
+            const isEmpty = !template || template.trim().length === 0;
+
+            if (isUnbalanced || isEmpty) {
+                previewEl.classList.add(`${APPID}-preview-fallback`);
+                warningEl.style.display = 'block';
+                if (isEmpty) {
+                    warningEl.textContent = "Template is empty. Using 'video' as fallback.";
+                } else {
+                    warningEl.textContent = 'Unbalanced brackets. Reverted to default.';
+                }
+                previewEl.textContent = previewFilename;
+                return;
+            }
+
+            // 2. Check for forbidden characters
+            const forbiddenRegex = /[<>:"/\\|?*]/;
+            const hasForbidden = forbiddenRegex.test(template);
+
+            if (hasForbidden) {
+                previewEl.classList.add(`${APPID}-preview-error`);
+                warningEl.style.display = 'block';
+                warningEl.textContent = 'Forbidden characters (< > : " / \\ | ? *) will be removed.';
+                previewEl.textContent = previewFilename;
+                return;
+            }
+
+            // 3. Valid State
+            previewEl.classList.add(`${APPID}-preview-valid`);
+            previewEl.textContent = previewFilename;
+        }
+
+        /**
+         * Restores default settings to the form inputs.
+         * @private
+         */
+        _restoreDefaults() {
+            // Restore Filename Template
+            const filenameInput = document.getElementById(`${APPID}-input-filename`);
+            if (filenameInput) {
+                filenameInput.value = DEFAULT_CONFIG.download.filenameTemplate;
+                // Trigger preview update manually since programmatic change doesn't fire 'input' event
+                const warningText = document.getElementById(`${APPID}-warning-text`);
+                const previewContent = document.getElementById(`${APPID}-preview-content`);
+                if (warningText && previewContent) {
+                    this._updatePreview(filenameInput.value, warningText, previewContent);
+                }
+            }
+
+            // Restore Checkboxes
+            const hoverInput = document.getElementById(`${APPID}-input-hover`);
+            if (hoverInput) {
+                hoverInput.checked = DEFAULT_CONFIG.common.showOnlyOnHover;
+            }
+
+            const newTabInput = document.getElementById(`${APPID}-input-newtab`);
+            if (newTabInput) {
+                newTabInput.checked = DEFAULT_CONFIG.openInNewTab.enabled;
+            }
+        }
+
+        /**
+         * Handles global keydown events.
+         * @private
+         */
+        _handleKeyDown(e) {
+            if (e.key === 'Escape') {
+                this.close();
+            }
+        }
+
+        /**
+         * Helper to create a labeled form group.
+         * @private
+         */
+        _createFormGroup(label, desc, control) {
+            return h(`div.${APPID}-form-group`, [h(`label.${APPID}-form-label`, label), control, desc ? h(`div.${APPID}-form-desc`, desc) : null]);
+        }
+    }
+
+    // =================================================================================
     // SECTION: API Manager
     // =================================================================================
 
@@ -644,7 +1432,8 @@
          * @returns {{hdUrl: string, userName: string, createDate: number}|undefined} The cached info object or undefined if not found.
          */
         getCachedVideoInfo(videoId) {
-            return this.videoCache.get(videoId);
+            // Normalize ID to lowercase for cache lookup
+            return this.videoCache.get(videoId.toLowerCase());
         }
 
         /**
@@ -705,13 +1494,16 @@
 
                         // Only require videoId and hdUrl to cache.
                         if (videoId && hdUrl) {
-                            if (!this.videoCache.has(videoId)) {
+                            // Normalize ID to lowercase for cache storage to match HTML attributes
+                            const normalizedId = videoId.toLowerCase();
+
+                            if (!this.videoCache.has(normalizedId)) {
                                 // Get optional metadata. These can be undefined.
                                 const userName = ApiManager.#API_GIF_USERNAME_EXTRACTOR(gif);
                                 const createDate = ApiManager.#API_GIF_CREATEDATE_EXTRACTOR(gif);
 
                                 // Store the info object, possibly with undefined values.
-                                this.videoCache.set(videoId, { hdUrl, userName, createDate });
+                                this.videoCache.set(normalizedId, { hdUrl, userName, createDate });
                                 count++;
                             }
                         }
@@ -721,10 +1513,10 @@
                     const path = '[JSON_PARSE]';
 
                     if (count > 0) {
-                        Logger.badge('CACHE UPDATED', LOG_STYLES.INFO, 'log', `${path} Added ${count} new items. Total: ${this.videoCache.size}`);
+                        Logger.badge('CACHE UPDATED', LOG_STYLES.BLUE, 'log', `${path} Added ${count} new items. Total: ${this.videoCache.size}`);
                     } else {
                         // Log if the feed contained items, but all were already cached.
-                        Logger.badge('API HIT', LOG_STYLES.LOG, 'log', `${path} (No new items added. Cache total: ${this.videoCache.size})`);
+                        Logger.badge('API HIT', LOG_STYLES.GREEN, 'log', `${path} (No new items added. Cache total: ${this.videoCache.size})`);
                     }
                 }
                 // If no gifs found (e.g., an empty feed or non-media API response), silently do nothing.
@@ -739,9 +1531,30 @@
     // =================================================================================
 
     class UIManager {
-        constructor() {
+        /**
+         * @param {ConfigManager} configManager
+         */
+        constructor(configManager) {
+            this.subscriptions = [];
+            /** @type {ConfigManager} */
+            this.configManager = configManager;
             /** @type {HTMLElement|null} */
             this.toastContainer = null;
+
+            // Subscribe to config updates to refresh styles dynamically
+            this._subscribe(EVENTS.CONFIG_UPDATED, () => this.updateDynamicStyles());
+        }
+
+        /**
+         * Helper to subscribe to EventBus events with automatic key management.
+         * @param {string} event - The event name to subscribe to.
+         * @param {Function} listener - The callback function.
+         * @private
+         */
+        _subscribe(event, listener) {
+            const key = createEventKey(this, event);
+            EventBus.subscribe(event, listener.bind(this), key);
+            this.subscriptions.push({ event, key });
         }
 
         /**
@@ -750,13 +1563,89 @@
          */
         init() {
             this._createToastContainer();
+            this.injectStaticStyles();
+            this.updateDynamicStyles();
         }
 
         /**
-         * Injects the necessary CSS styles for the script's UI into the document's head.
+         * Injects the static CSS styles (UI templates + Modal styles).
+         * These do not change during the session.
          */
-        injectStyles() {
-            this._injectStyles();
+        injectStaticStyles() {
+            const id = `${APPID}-static-styles`;
+            if (document.getElementById(id)) return;
+            const styleElement = h('style', { id: id, type: 'text/css', 'data-owner': APPID }, UI_STYLES_TEMPLATE + MODAL_STYLES);
+            document.head.appendChild(styleElement);
+        }
+
+        /**
+         * Updates CSS styles that depend on configuration (e.g., showOnlyOnHover).
+         * Called on init and when configuration changes.
+         */
+        updateDynamicStyles() {
+            const config = this.configManager.get();
+            const id = `${APPID}-dynamic-styles`;
+
+            // Remove existing dynamic styles to re-apply
+            let styleEl = document.getElementById(id);
+            if (!styleEl) {
+                styleEl = h('style', { id: id, type: 'text/css' });
+                document.head.appendChild(styleEl);
+            }
+
+            // Define class names locally
+            const CLS = {
+                TILE_OPEN: `${APPID}-open-in-new-tab-btn`,
+                TILE_DOWNLOAD: `${APPID}-tile-download-btn`,
+                PREVIEW_OPEN: `${APPID}-preview-open-btn`,
+                PREVIEW_DOWNLOAD: `${APPID}-preview-download-btn`,
+            };
+
+            let css = '';
+
+            // Apply 'Show Only On Hover' logic
+            if (config.common.showOnlyOnHover) {
+                const createHoverStyle = (btnClass, parentSelector) => `
+                    /* Default state: Hidden and non-clickable */
+                    .${btnClass} {
+                        opacity: 0;
+                        pointer-events: none;
+                        transition: opacity 0.2s ease-in-out;
+                    }
+                    /* Hover state: Visible and clickable */
+                    ${parentSelector}:hover .${btnClass} {
+                        opacity: 1;
+                        pointer-events: auto;
+                    }
+                    /* Mobile: Always visible (force override) */
+                    .App.phone .${btnClass} {
+                        opacity: 1 !important;
+                        pointer-events: auto !important;
+                    }
+                `;
+                // Apply to all 4 button types
+                css += createHoverStyle(CLS.TILE_OPEN, CONSTANTS.TILE_ITEM_SELECTOR);
+                css += createHoverStyle(CLS.PREVIEW_OPEN, CONSTANTS.VIDEO_CONTAINER_SELECTOR);
+                css += createHoverStyle(CLS.TILE_DOWNLOAD, CONSTANTS.TILE_ITEM_SELECTOR);
+                css += createHoverStyle(CLS.PREVIEW_DOWNLOAD, CONSTANTS.VIDEO_CONTAINER_SELECTOR);
+            }
+
+            // Layout Adjustments (if Open in New Tab is disabled)
+            if (!config.openInNewTab.enabled) {
+                css += `
+                    /* Move Download Button to top position */
+                    .${CLS.TILE_DOWNLOAD} { top: 8px !important; }
+                    .${CLS.PREVIEW_DOWNLOAD} { top: 8px !important; }
+                    
+                    /* Mobile adjustment for Preview */
+                    .App.phone .${CLS.PREVIEW_DOWNLOAD} { top: 64px !important; }
+
+                    /* Hide existing buttons if they exist in DOM (for immediate update without reload) */
+                    .${CLS.TILE_OPEN}, .${CLS.PREVIEW_OPEN} { display: none !important; }
+                `;
+            }
+
+            styleEl.textContent = css;
         }
 
         /**
@@ -780,7 +1669,7 @@
             }
 
             const toastClass = `${APPID}-toast-${type}`;
-            const toastElement = h(`div.${APPID}-toast`, { class: toastClass }, message);
+            const toastElement = h(`div.${APPID}-toast`, { className: toastClass }, message);
 
             this.toastContainer.appendChild(toastElement);
 
@@ -900,71 +1789,6 @@
 
             this._setButtonIcon(button, iconName);
             parentElement.appendChild(button);
-        }
-
-        /**
-         * Injects the necessary CSS styles into the document's head.
-         * @private
-         */
-        _injectStyles() {
-            // 1. Base Styles
-            let css = STYLES;
-
-            // 2. Dynamic Styles based on USER_SETTINGS
-            const settings = CONSTANTS.USER_SETTINGS;
-
-            // Define class names locally since config object was removed
-            const CLS = {
-                TILE_OPEN: `${APPID}-open-in-new-tab-btn`,
-                TILE_DOWNLOAD: `${APPID}-tile-download-btn`,
-                PREVIEW_OPEN: `${APPID}-preview-open-btn`,
-                PREVIEW_DOWNLOAD: `${APPID}-preview-download-btn`,
-            };
-
-            // Helper to generate hover-only styles
-            const createHoverStyle = (btnClass, parentSelector) => `
-                /* Default state: Hidden and non-clickable */
-                .${btnClass} {
-                    opacity: 0;
-                    pointer-events: none;
-                    transition: opacity 0.2s ease-in-out;
-                }
-                /* Hover state: Visible and clickable */
-                ${parentSelector}:hover .${btnClass} {
-                    opacity: 1;
-                    pointer-events: auto;
-                }
-                /* Mobile: Always visible (force override) */
-                .App.phone .${btnClass} {
-                    opacity: 1 !important;
-                    pointer-events: auto !important;
-                }
-            `;
-
-            // Apply 'Show Only On Hover' globally if enabled
-            if (settings.common.showOnlyOnHover) {
-                // Apply to all 4 button types
-                css += createHoverStyle(CLS.TILE_OPEN, CONSTANTS.TILE_ITEM_SELECTOR);
-                css += createHoverStyle(CLS.PREVIEW_OPEN, CONSTANTS.VIDEO_CONTAINER_SELECTOR);
-                css += createHoverStyle(CLS.TILE_DOWNLOAD, CONSTANTS.TILE_ITEM_SELECTOR);
-                css += createHoverStyle(CLS.PREVIEW_DOWNLOAD, CONSTANTS.VIDEO_CONTAINER_SELECTOR);
-            }
-
-            // 3. Layout Adjustments (if Open in New Tab is disabled)
-            if (!settings.openInNewTab.enabled) {
-                // Move Download buttons up to fill the gap
-                css += `
-                    /* Move Download Button to top position (8px) */
-                    .${CLS.TILE_DOWNLOAD} { top: 8px !important; }
-                    .${CLS.PREVIEW_DOWNLOAD} { top: 8px !important; }
-                    
-                    /* Mobile adjustment for Preview (64px = Toolbar + 8px) */
-                    .App.phone .${CLS.PREVIEW_DOWNLOAD} { top: 64px !important; }
-                `;
-            }
-
-            const styleElement = h('style', { type: 'text/css', 'data-owner': APPID }, css);
-            document.head.appendChild(styleElement);
         }
     }
 
@@ -1100,6 +1924,7 @@
      * @property {HTMLElement | null} styleElement
      * @property {CSSStyleSheet | null} sheet
      * @property {string[]} pendingRules
+     * @property {WeakMap<CSSRule, string>} ruleSelectors
      */
     class Sentinel {
         /**
@@ -1125,6 +1950,8 @@
             this.styleElement = null; // Holds the reference to the single style element
             this.sheet = null; // Cache the CSSStyleSheet reference
             this.pendingRules = []; // Queue for rules requested before sheet is ready
+            /** @type {WeakMap<CSSRule, string>} */
+            this.ruleSelectors = new WeakMap(); // Tracks selector strings associated with CSSRule objects
 
             this._injectStyleElement();
             document.addEventListener('animationstart', this._handleAnimationStart.bind(this), true);
@@ -1146,14 +1973,29 @@
                 id: this.styleId,
             });
 
+            // CSP Fix: Try to fetch a valid nonce from existing scripts/styles
+            // "nonce" property exists on HTMLScriptElement/HTMLStyleElement, not basic Element.
+            let nonce;
+            const script = document.querySelector('script[nonce]');
+            const style = document.querySelector('style[nonce]');
+
+            if (script instanceof HTMLScriptElement) {
+                nonce = script.nonce;
+            } else if (style instanceof HTMLStyleElement) {
+                nonce = style.nonce;
+            }
+
+            if (nonce) {
+                this.styleElement.setAttribute('nonce', nonce);
+            }
+
             // Try to inject immediately. If the document is not yet ready (e.g. extremely early document-start), wait for the root element.
             const target = document.head || document.documentElement;
 
             const initSheet = () => {
                 if (this.styleElement instanceof HTMLStyleElement) {
                     this.sheet = this.styleElement.sheet;
-                    // Insert the shared keyframes rule at index 0 and keep it there.
-                    // We use insertRule for performance instead of textContent replacement.
+                    // Insert the shared keyframes rule at index 0.
                     try {
                         const keyframes = `@keyframes ${this.animationName} { from { transform: none; } to { transform: none; } }`;
                         this.sheet.insertRule(keyframes, 0);
@@ -1201,12 +2043,11 @@
                 const ruleText = `${selector} { animation-duration: 0.001s; animation-name: ${this.animationName}; }`;
                 this.sheet.insertRule(ruleText, index);
 
-                // Tag the inserted rule object with the selector for safer removal later.
+                // Associate the inserted rule with the selector via WeakMap for safer removal later.
                 // This mimics sentinel.js behavior to handle index shifts and selector normalization.
                 const insertedRule = this.sheet.cssRules[index];
                 if (insertedRule) {
-                    // @ts-ignore - Custom property for tracking
-                    insertedRule._id = selector;
+                    this.ruleSelectors.set(insertedRule, selector);
                 }
             } catch (e) {
                 Logger.badge('SENTINEL', LOG_STYLES.RED, 'error', `Failed to insert rule for selector "${selector}":`, e);
@@ -1278,9 +2119,10 @@
                     // Iterate backwards to avoid index shifting issues during deletion
                     for (let i = this.sheet.cssRules.length - 1; i >= 0; i--) {
                         const rule = this.sheet.cssRules[i];
-                        // Check for custom tag or fallback to selectorText match
-                        // @ts-ignore
-                        if (rule._id === selector || rule.selectorText === selector) {
+                        // Check for recorded selector via WeakMap or fallback to selectorText match
+                        const recordedSelector = this.ruleSelectors.get(rule);
+
+                        if (recordedSelector === selector || (rule instanceof CSSStyleRule && rule.selectorText === selector)) {
                             this.sheet.deleteRule(i);
                             // We assume one rule per selector, so we can break after deletion
                             break;
@@ -1319,32 +2161,42 @@
      */
     class AppController {
         constructor() {
+            /** @type {ConfigManager} */
+            this.configManager = new ConfigManager();
             /** @type {ApiManager} */
             this.apiManager = new ApiManager();
             /** @type {UIManager} */
-            this.ui = new UIManager();
+            this.ui = new UIManager(this.configManager); // Pass configManager to UIManager
             /** @type {AnnoyanceManager} */
             this.annoyanceManager = new AnnoyanceManager();
             /** @type {Map<string, AbortController>} */
             this.activeDownloads = new Map();
+            /** @type {SettingsModal|null} */
+            this.settingsModal = null;
         }
 
         /**
          * Initializes the script.
          */
-        init() {
-            // 1. Inject annoyance removal styles
+        async init() {
+            // 1. Load configuration asynchronously
+            await this.configManager.load();
+
+            // 2. Initialize Settings Modal and register menu command
+            this.settingsModal = new SettingsModal(this.configManager);
+            GM.registerMenuCommand('Open Settings', () => {
+                this.settingsModal.open();
+            });
+
+            // 3. Inject annoyance removal styles
             this.annoyanceManager.injectStyles();
 
-            // 2. Inject script UI (buttons, toast) styles
-            this.ui.injectStyles();
-
-            // 3. Initialize UI components (toast container)
+            // 4. Inject script UI (buttons, toast) styles
             this.ui.init();
 
             const sentinel = new Sentinel(OWNERID);
 
-            // 4. Register JS-based annoyance removal
+            // 5. Register JS-based annoyance removal
             this.annoyanceManager.removeElements(sentinel);
 
             /**
@@ -1356,6 +2208,23 @@
                 sentinel.on(selector, handler);
             };
 
+            // Shared ID extractor for dataset-based IDs
+            const getFeedId = (el) => {
+                // ID is in 'data-feed-item-id'
+                const feedId = el.dataset.feedItemId;
+                // Filter out non-video items (e.g. 'feed-module-...') and normalize to lowercase
+                if (feedId && !feedId.startsWith('feed-module-')) {
+                    return feedId.toLowerCase();
+                }
+                // Fallback: Check for ID attribute if layout reverts or mixed
+                // Tile IDs were just the ID, Preview IDs were 'gif_ID'
+                if (el.id) {
+                    const idPart = el.id.startsWith('gif_') ? el.id.split('_')[1] : el.id;
+                    return idPart ? idPart.toLowerCase() : null;
+                }
+                return null;
+            };
+
             // Set up the listener using Sentinel.
             // When Sentinel registers a new selector, it rewrites its stylesheet.
             // This triggers the animationstart event for both elements
@@ -1363,20 +2232,12 @@
 
             // Setup observer for Tile Items (Grid View)
             registerObserver(CONSTANTS.TILE_ITEM_SELECTOR, (element) => {
-                this._onElementFound(
-                    element,
-                    (id) => id, // Tile ID is the video ID
-                    CONSTANTS.CONTEXT_TYPE.TILE
-                );
+                this._onElementFound(element, getFeedId, CONSTANTS.CONTEXT_TYPE.TILE);
             });
 
             // Setup observer for Video Containers (Preview/Watch View)
             registerObserver(CONSTANTS.VIDEO_CONTAINER_SELECTOR, (element) => {
-                this._onElementFound(
-                    element,
-                    (id) => id.split('_')[1], // Preview ID is "gif_VIDEOID"
-                    CONSTANTS.CONTEXT_TYPE.PREVIEW
-                );
+                this._onElementFound(element, getFeedId, CONSTANTS.CONTEXT_TYPE.PREVIEW);
             });
 
             Logger.log('Initialized and observing DOM for new content.');
@@ -1385,16 +2246,16 @@
         /**
          * Generic handler for found elements (replaces _onTileItemFound and _onPreviewFound).
          * @param {HTMLElement} element The found DOM element.
-         * @param {(id: string) => string} idParser A function to extract the video ID from the element's ID.
+         * @param {(element: HTMLElement) => string|null} idExtractor A function to extract the video ID from the element.
          * @param {string} type The context type of the element (from CONSTANTS.CONTEXT_TYPE).
          * @private
          */
-        _onElementFound(element, idParser, type) {
-            if (!element || !element.id) {
+        _onElementFound(element, idExtractor, type) {
+            if (!element) {
                 return;
             }
 
-            const videoId = idParser(element.id);
+            const videoId = idExtractor(element);
 
             // Robust check: Ensure videoId is truthy (not null, undefined, or empty string)
             if (videoId) {
@@ -1410,11 +2271,11 @@
          * @private
          */
         _addButtonsToElement(element, videoId, type) {
-            const settings = CONSTANTS.USER_SETTINGS;
             const isTile = type === CONSTANTS.CONTEXT_TYPE.TILE;
 
             // --- 1. Open in New Tab Button (Link) ---
-            if (settings.openInNewTab.enabled) {
+            // Always create the button elements. Visibility is toggled via CSS based on settings.
+            {
                 const className = isTile ? `${APPID}-open-in-new-tab-btn` : `${APPID}-preview-open-btn`;
                 const url = `${CONSTANTS.WATCH_URL_BASE}${videoId}`;
 
@@ -1554,6 +2415,7 @@
          * @private
          */
         async _executeDownload(videoInfo, videoId, signal) {
+            const config = this.configManager.get();
             // --- A. Get Video Info ---
             const { hdUrl, userName, createDate } = videoInfo;
             const downloadUrl = hdUrl;
@@ -1567,7 +2429,7 @@
                 id: videoId || '',
             };
 
-            const baseFilename = resolveFilename(CONSTANTS.USER_SETTINGS.download.filenameTemplate, replacements);
+            const baseFilename = resolveFilename(config.download.filenameTemplate, replacements);
 
             // --- Dynamic Extension ---
             let extension = getExtension(hdUrl);
@@ -1631,14 +2493,21 @@
     ExecutionGuard.setExecuted();
 
     // 1. Instantiate controller immediately at document-start.
-    // The constructor sets up the JSON.parse interceptor.
+    // The constructor sets up the JSON.parse interceptor (ApiManager).
     const app = new AppController();
 
     // 2. Defer the UI initialization (init()) until the DOM is ready, as UIManager and Sentinel need access to document.body.
+    // init() is now async because it loads configuration first.
     if (document.readyState === 'loading') {
-        document.addEventListener('DOMContentLoaded', () => app.init());
+        document.addEventListener('DOMContentLoaded', () => {
+            app.init().catch((e) => {
+                Logger.error('Failed to initialize app:', e);
+            });
+        });
     } else {
         // Already 'interactive' or 'complete'
-        app.init();
+        app.init().catch((e) => {
+            Logger.error('Failed to initialize app:', e);
+        });
     }
 })();
