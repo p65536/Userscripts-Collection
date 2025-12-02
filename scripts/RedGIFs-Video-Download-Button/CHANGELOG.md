@@ -1,5 +1,18 @@
 # Changelog
 
+## [2.0.0] - 2025-12-03
+- **New Features**
+  - Added a new **Settings Menu** (accessible via the script manager) to customize preferences directly within the UI.
+  - Users can now configure "custom filename templates", toggle the "Open in New Tab" button, and enable "Show on Hover" mode.
+- **Fixes**
+  - Fixed a critical issue where download buttons disappeared following a major RedGIFs site layout update.
+  - Updated detection logic to correctly identify videos in the new Grid and Preview layouts.
+  - Improved filtering to prevent buttons from incorrectly appearing on ads or live camera elements.
+- **Core Changes**
+  - Implemented a robust `ConfigManager` to handle setting storage and validation safely.
+  - Enhanced security by hardening DOM creation utilities and adding support for strict Content Security Policies (CSP).
+  - Refactored the internal logging system for better error reporting and debugging.
+
 ## [1.9.0] - 2025-11-26
 - **Feat: Improved "Open in New Tab" button behavior.**
   - The button is now a standard link (`<a>` tag), restoring native browser behaviors.
