@@ -1,5 +1,16 @@
 # Changelog
 
+## [1.3.0] - 2025-12-07
+- **UI & Experience**
+  - **New Settings Interface:** Replaced the floating on-screen button with a clean modal overlay. Settings are now accessed via the script manager's menu command (e.g., Tampermonkey menu).
+  - **Accessibility:** Added keyboard support (ESC to close) and improved focus handling within the settings menu.
+- **Core Changes**
+  - **API Migration:** Migrated to the modern, asynchronous `GM.` API standard, ensuring better compatibility with current script managers.
+  - **Architecture:** Refactored the internal core (EventBus, Logger) to improve overall script stability.
+- **Fixes & Optimizations**
+  - **Resource Cleanup:** Implemented strict lifecycle management to prevent memory leaks and ensure UI elements and styles are fully removed upon script reload.
+  - **Storage & Security:** Hardened configuration handling to prevent security vulnerabilities and automatically clean up deprecated settings from storage.
+
 ## [1.2.1] - 2025-11-20
 - **Fixes & Improvements**
   - Improved the reliability of **Shorts Redirection**. The feature now correctly handles shared links (e.g., `?feature=share`) and other complex URLs without losing parameters.
