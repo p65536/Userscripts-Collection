@@ -1,15 +1,16 @@
 // ==UserScript==
 // @name         YouTube-UI-Customizer
 // @namespace    https://github.com/p65536
-// @version      1.2.1
+// @version      1.3.0
 // @license      MIT
 // @description  Enhances your YouTube experience. Customize the video grid layout by adjusting thumbnails per row, hide Shorts content, and automatically redirect the Shorts player to the standard video player.
 // @icon         https://www.youtube.com/favicon.ico
 // @author       p65536
 // @match        https://www.youtube.com/*
-// @grant        GM_getValue
-// @grant        GM_setValue
-// @grant        GM_addValueChangeListener
+// @grant        GM.getValue
+// @grant        GM.setValue
+// @grant        GM.registerMenuCommand
+// @grant        GM.addValueChangeListener
 // @run-at       document-start
 // @noframes
 // ==/UserScript==
@@ -51,42 +52,148 @@
 
     // =================================================================================
     // SECTION: Logging Utility
+    // Description: Centralized logging interface for consistent log output across modules.
+    //              Handles log level control, message formatting, and console API wrapping.
     // =================================================================================
 
-    const Logger = {
-        levels: { error: 0, warn: 1, info: 2, log: 3 },
-        level: 'log',
-        setLevel(level) {
+    // Style definitions for styled Logger.badge()
+    const LOG_STYLES = {
+        BASE: 'color: white; padding: 2px 6px; border-radius: 4px; font-weight: bold;',
+        BLUE: 'background: #007bff;',
+        GREEN: 'background: #28a745;',
+        YELLOW: 'background: #ffc107; color: black;',
+        RED: 'background: #dc3545;',
+    };
+
+    class Logger {
+        /** @property {object} levels - Defines the numerical hierarchy of log levels. */
+        static levels = {
+            error: 0,
+            warn: 1,
+            info: 2,
+            log: 3,
+            debug: 4,
+        };
+        /** @property {string} level - The current active log level. */
+        static level = 'log'; // Default level
+
+        /**
+         * Sets the current log level.
+         * @param {string} level The new log level. Must be one of 'error', 'warn', 'info', 'log', 'debug'.
+         */
+        static setLevel(level) {
             if (Object.prototype.hasOwnProperty.call(this.levels, level)) {
                 this.level = level;
+                Logger.badge('LOG LEVEL', LOG_STYLES.BLUE, 'log', `Logger level is set to '${this.level}'.`);
             } else {
-                console.warn(LOG_PREFIX, `Invalid log level "${level}". Valid levels are: ${Object.keys(this.levels).join(', ')}. Level not changed.`);
+                Logger.badge('INVALID LEVEL', LOG_STYLES.YELLOW, 'warn', `Invalid log level "${level}". Valid levels are: ${Object.keys(this.levels).join(', ')}. Level not changed.`);
             }
-        },
-        error(...args) {
+        }
+
+        /** @param {...any} args The messages or objects to log. */
+        static error(...args) {
             if (this.levels[this.level] >= this.levels.error) {
                 console.error(LOG_PREFIX, ...args);
             }
-        },
-        warn(...args) {
+        }
+
+        /** @param {...any} args The messages or objects to log. */
+        static warn(...args) {
             if (this.levels[this.level] >= this.levels.warn) {
                 console.warn(LOG_PREFIX, ...args);
             }
-        },
-        info(...args) {
+        }
+
+        /** @param {...any} args The messages or objects to log. */
+        static info(...args) {
             if (this.levels[this.level] >= this.levels.info) {
                 console.info(LOG_PREFIX, ...args);
             }
-        },
-        log(...args) {
+        }
+
+        /** @param {...any} args The messages or objects to log. */
+        static log(...args) {
             if (this.levels[this.level] >= this.levels.log) {
                 console.log(LOG_PREFIX, ...args);
             }
-        },
-    };
+        }
+
+        /**
+         * Logs messages for debugging. Only active in 'debug' level.
+         * @param {...any} args The messages or objects to log.
+         */
+        static debug(...args) {
+            if (this.levels[this.level] >= this.levels.debug) {
+                // Use console.debug for better filtering in browser dev tools.
+                console.debug(LOG_PREFIX, ...args);
+            }
+        }
+
+        /**
+         * Starts a timer for performance measurement. Only active in 'debug' level.
+         * @param {string} label The label for the timer.
+         */
+        static time(label) {
+            if (this.levels[this.level] >= this.levels.debug) {
+                console.time(`${LOG_PREFIX} ${label}`);
+            }
+        }
+
+        /**
+         * Ends a timer and logs the elapsed time. Only active in 'debug' level.
+         * @param {string} label The label for the timer, must match the one used in time().
+         */
+        static timeEnd(label) {
+            if (this.levels[this.level] >= this.levels.debug) {
+                console.timeEnd(`${LOG_PREFIX} ${label}`);
+            }
+        }
+
+        /**
+         * @param {...any} args The title for the log group.
+         * @returns {void}
+         */
+        static group = (...args) => console.group(LOG_PREFIX, ...args);
+        /**
+         * @param {...any} args The title for the collapsed log group.
+         * @returns {void}
+         */
+        static groupCollapsed = (...args) => console.groupCollapsed(LOG_PREFIX, ...args);
+        /**
+         * Closes the current log group.
+         * @returns {void}
+         */
+        static groupEnd = () => console.groupEnd();
+
+        /**
+         * Logs a message with a styled badge for better visibility.
+         * @param {string} badgeText - The text inside the badge.
+         * @param {string} badgeStyle - The background-color style (from LOG_STYLES).
+         * @param {'log'|'warn'|'error'|'info'|'debug'} level - The console log level.
+         * @param {...any} args - Additional messages to log after the badge.
+         */
+        static badge(badgeText, badgeStyle, level, ...args) {
+            if (this.levels[this.level] < this.levels[level]) {
+                return; // Respect the current log level
+            }
+
+            const style = `${LOG_STYLES.BASE} ${badgeStyle}`;
+            const consoleMethod = console[level] || console.log;
+
+            consoleMethod(
+                `%c${LOG_PREFIX}%c %c${badgeText}%c`,
+                'font-weight: bold;', // Style for the prefix
+                'color: inherit;', // Reset for space
+                style, // Style for the badge
+                'color: inherit;', // Reset for the rest of the message
+                ...args
+            );
+        }
+    }
 
     // =================================================================================
     // SECTION: Execution Guard
+    // Description: Prevents the script from being executed multiple times per page.
     // =================================================================================
 
     class ExecutionGuard {
@@ -136,12 +243,8 @@
             moreTopics: 'ytd-rich-section-renderer:has(ytd-chips-shelf-with-video-shelf-renderer)',
         },
         UI_DEFAULTS: {
-            SETTINGS_BUTTON: {
-                top: '12px',
-                right: '240px',
-                width: '36px',
-                height: '36px',
-                zIndex: 10000,
+            MODAL: {
+                Z_INDEX: 10001,
             },
             SLIDER: {
                 min: 2,
@@ -157,68 +260,224 @@
             hideShorts: true,
             hideMoreTopics: true,
             redirectShorts: true,
-            syncTabs: true,
         },
     };
 
     const SITE_STYLES = {
         youtube: {
-            SETTINGS_BUTTON: {
-                background: 'var(--yt-spec-brand-background-solid, transparent)',
-                borderColor: 'var(--yt-spec-border-primary, #ddd)',
-                backgroundHover: 'var(--yt-spec-badge-chip-background, #f0f0f0)',
-                borderRadius: '50%',
-                iconDef: {
-                    tag: 'svg',
-                    props: { xmlns: 'http://www.w3.org/2000/svg', height: '24px', viewBox: '0 -960 960 960', width: '24px', fill: 'var(--yt-spec-icon-active-other, #606060)' },
-                    children: [
-                        {
-                            tag: 'path',
-                            props: {
-                                d: 'M480-160H160q-33 0-56.5-23.5T80-240v-480q0-33 23.5-56.5T160-800h640q33 0 56.5 23.5T880-720v200h-80v-200H160v480h320v80ZM380-300v-360l280 180-280 180ZM714-40l-12-60q-12-5-22.5-10.5T658-124l-58 18-40-68 46-40q-2-14-2-26t2-26l-46-40 40-68 58 18q11-8 21.5-13.5T702-380l12-60h80l12 60q12 5 22.5 11t21.5 15l58-20 40 70-46 40q2 12 2 25t-2 25l46 40-40 68-58-18q-11 8-21.5 13.5T806-100l-12 60h-80Zm40-120q33 0 56.5-23.5T834-240q0-33-23.5-56.5T754-320q-33 0-56.5 23.5T674-240q0 33 23.5 56.5T754-160Z',
-                            },
-                        },
-                    ],
-                },
-            },
-            SETTINGS_PANEL: {
+            MODAL_THEME: {
                 bg: 'var(--yt-spec-menu-background, #fff)',
                 text_primary: 'var(--yt-spec-text-primary, #030303)',
                 text_secondary: 'var(--yt-spec-text-secondary, #606060)',
                 border_default: 'var(--yt-spec-border-primary, #ddd)',
                 accent_color: 'var(--yt-spec-call-to-action, #065fd4)',
-                input_bg: 'var(--yt-spec-brand-background-primary, #f9f9f9)',
+                overlay_bg: 'rgb(0 0 0 / 0.6)',
             },
         },
     };
 
+    const EVENTS = {
+        CONFIG_UPDATED: `${APPID}:configUpdated`,
+        CONFIG_SAVE_SUCCESS: `${APPID}:configSaveSuccess`,
+    };
+
     // =================================================================================
     // SECTION: Event-Driven Architecture (Pub/Sub)
+    // Description: A event bus for decoupled communication between classes.
     // =================================================================================
 
     const EventBus = {
         events: {},
-        subscribe(event, listener) {
-            if (!this.events[event]) {
-                this.events[event] = [];
+        uiWorkQueue: [],
+        isUiWorkScheduled: false,
+        _logAggregation: {},
+        // prettier-ignore
+        _aggregatedEvents: new Set([
+        ]),
+        _aggregationDelay: 500, // ms
+
+        /**
+         * Subscribes a listener to an event using a unique key.
+         * If a subscription with the same event and key already exists, it will be overwritten.
+         * @param {string} event The event name.
+         * @param {Function} listener The callback function.
+         * @param {string} key A unique key for this subscription (e.g., 'ClassName.methodName').
+         */
+        subscribe(event, listener, key) {
+            if (!key) {
+                Logger.error('EventBus.subscribe requires a unique key.');
+                return;
             }
-            if (!this.events[event].includes(listener)) {
-                this.events[event].push(listener);
+            if (!this.events[event]) {
+                this.events[event] = new Map();
+            }
+            this.events[event].set(key, listener);
+        },
+        /**
+         * Subscribes a listener that will be automatically unsubscribed after one execution.
+         * @param {string} event The event name.
+         * @param {Function} listener The callback function.
+         * @param {string} key A unique key for this subscription.
+         */
+        once(event, listener, key) {
+            if (!key) {
+                Logger.error('EventBus.once requires a unique key.');
+                return;
+            }
+            const onceListener = (...args) => {
+                this.unsubscribe(event, key);
+                listener(...args);
+            };
+            this.subscribe(event, onceListener, key);
+        },
+        /**
+         * Unsubscribes a listener from an event using its unique key.
+         * @param {string} event The event name.
+         * @param {string} key The unique key used during subscription.
+         */
+        unsubscribe(event, key) {
+            if (!this.events[event] || !key) {
+                return;
+            }
+            this.events[event].delete(key);
+            if (this.events[event].size === 0) {
+                delete this.events[event];
             }
         },
+        /**
+         * Publishes an event, calling all subscribed listeners with the provided data.
+         * @param {string} event The event name.
+         * @param {...any} args The data to pass to the listeners.
+         */
         publish(event, ...args) {
             if (!this.events[event]) {
                 return;
             }
-            this.events[event].forEach((listener) => {
-                try {
-                    listener(...args);
-                } catch (e) {
-                    Logger.error(`EventBus error in listener for event "${event}":`, e);
+
+            if (Logger.levels[Logger.level] >= Logger.levels.debug) {
+                // --- Aggregation logic START ---
+                if (this._aggregatedEvents.has(event)) {
+                    if (!this._logAggregation[event]) {
+                        this._logAggregation[event] = { timer: null, count: 0 };
+                    }
+                    const aggregation = this._logAggregation[event];
+                    aggregation.count++;
+
+                    clearTimeout(aggregation.timer);
+                    aggregation.timer = setTimeout(() => {
+                        const finalCount = this._logAggregation[event]?.count || 0;
+                        if (finalCount > 0) {
+                            console.log(LOG_PREFIX, `Event Published: ${event} (x${finalCount})`);
+                        }
+                        delete this._logAggregation[event];
+                    }, this._aggregationDelay);
+
+                    // Execute subscribers for the aggregated event, but without the verbose individual logs.
+                    [...this.events[event].values()].forEach((listener) => {
+                        try {
+                            listener(...args);
+                        } catch (e) {
+                            Logger.error(`EventBus error in listener for event "${event}":`, e);
+                        }
+                    });
+                    return; // End execution here for aggregated events in debug mode.
                 }
-            });
+                // --- Aggregation logic END ---
+
+                // In debug mode, provide detailed logging for NON-aggregated events.
+                const subscriberKeys = [...this.events[event].keys()];
+
+                // Use groupCollapsed for a cleaner default view
+                console.groupCollapsed(LOG_PREFIX, `Event Published: ${event}`);
+
+                if (args.length > 0) {
+                    console.log('  - Payload:', ...args);
+                } else {
+                    console.log('  - Payload: (No data)');
+                }
+
+                // Displaying subscribers helps in understanding the event's impact.
+                if (subscriberKeys.length > 0) {
+                    console.log('  - Subscribers:\n' + subscriberKeys.map((key) => `    > ${key}`).join('\n'));
+                } else {
+                    console.log('  - Subscribers: (None)');
+                }
+
+                // Iterate with keys for better logging
+                this.events[event].forEach((listener, key) => {
+                    try {
+                        // Log which specific subscriber is being executed
+                        Logger.debug(`-> Executing: ${key}`);
+                        listener(...args);
+                    } catch (e) {
+                        // Enhance error logging with the specific subscriber key
+                        Logger.badge('LISTENER ERROR', LOG_STYLES.RED, 'error', `Listener "${key}" failed for event "${event}":`, e);
+                    }
+                });
+
+                console.groupEnd();
+            } else {
+                // Iterate over a copy of the values in case a listener unsubscribes itself.
+                [...this.events[event].values()].forEach((listener) => {
+                    try {
+                        listener(...args);
+                    } catch (e) {
+                        Logger.badge('LISTENER ERROR', LOG_STYLES.RED, 'error', `Listener failed for event "${event}":`, e);
+                    }
+                });
+            }
+        },
+
+        /**
+         * Queues a function to be executed on the next animation frame.
+         * Batches multiple UI updates into a single repaint cycle.
+         * @param {Function} workFunction The function to execute.
+         */
+        queueUIWork(workFunction) {
+            this.uiWorkQueue.push(workFunction);
+            if (!this.isUiWorkScheduled) {
+                this.isUiWorkScheduled = true;
+                requestAnimationFrame(this._processUIWorkQueue.bind(this));
+            }
+        },
+
+        /**
+         * @private
+         * @processUIWorkQueue Processes all functions in the UI work queue.
+         */
+        _processUIWorkQueue() {
+            // Prevent modifications to the queue while processing.
+            const queueToProcess = [...this.uiWorkQueue];
+            this.uiWorkQueue.length = 0;
+
+            for (const work of queueToProcess) {
+                try {
+                    work();
+                } catch (e) {
+                    Logger.badge('UI QUEUE ERROR', LOG_STYLES.RED, 'error', 'Error in queued UI work:', e);
+                }
+            }
+            this.isUiWorkScheduled = false;
         },
     };
+
+    /**
+     * Creates a unique, consistent event subscription key for EventBus.
+     * @param {object} context The `this` context of the subscribing class instance.
+     * @param {string} eventName The full event name from the EVENTS constant.
+     * @returns {string} A key in the format 'ClassName.purpose'.
+     */
+    function createEventKey(context, eventName) {
+        // Extract a meaningful 'purpose' from the event name
+        const parts = eventName.split(':');
+        const purpose = parts.length > 1 ? parts.slice(1).join('_') : parts[0];
+
+        let contextName = 'UnknownContext';
+        if (context && context.constructor && context.constructor.name) {
+            contextName = context.constructor.name;
+        }
+        return `${contextName}.${purpose}`;
+    }
 
     // =================================================================================
     // SECTION: Utility Functions
@@ -227,14 +486,18 @@
     /**
      * @param {Function} func
      * @param {number} delay
-     * @returns {Function}
+     * @returns {Function & { cancel: () => void }}
      */
     function debounce(func, delay) {
         let timeout;
-        return function (...args) {
+        const debounced = function (...args) {
             clearTimeout(timeout);
             timeout = setTimeout(() => func.apply(this, args), delay);
         };
+        debounced.cancel = () => {
+            clearTimeout(timeout);
+        };
+        return debounced;
     }
 
     /**
@@ -247,18 +510,38 @@
     }
 
     /**
-     * Recursively merges the properties of a source object into a target object.
+     * Recursively resolves the configuration by overlaying source properties onto the target object.
+     * The target object is mutated. This handles recursive updates for nested objects but overwrites arrays/primitives.
+     *
+     * [MERGE BEHAVIOR]
+     * Keys present in 'source' but missing in 'target' are ignored.
+     * The 'target' object acts as a schema; it must contain all valid keys.
+     *
      * @param {object} target The target object (e.g., a deep copy of default config).
      * @param {object} source The source object (e.g., user config).
      * @returns {object} The mutated target object.
      */
-    function deepMerge(target, source) {
+    function resolveConfig(target, source) {
         for (const key in source) {
+            // Security: Prevent prototype pollution
+            if (key === '__proto__' || key === 'constructor' || key === 'prototype') {
+                continue;
+            }
+
             if (Object.prototype.hasOwnProperty.call(source, key)) {
+                // Strict check: Ignore keys that do not exist in the target (default config).
+                if (!Object.prototype.hasOwnProperty.call(target, key)) {
+                    continue;
+                }
+
                 const sourceVal = source[key];
-                if (isObject(sourceVal) && Object.prototype.hasOwnProperty.call(target, key) && isObject(target[key])) {
-                    deepMerge(target[key], sourceVal);
+                const targetVal = target[key];
+
+                if (isObject(sourceVal) && isObject(targetVal)) {
+                    // If both are objects, recurse
+                    resolveConfig(targetVal, sourceVal);
                 } else if (typeof sourceVal !== 'undefined') {
+                    // Otherwise, overwrite or set the value from the source
                     target[key] = sourceVal;
                 }
             }
@@ -321,11 +604,11 @@
                         el.setAttribute(key, url);
                     } else {
                         el.setAttribute(key, '#');
-                        Logger.warn(`Blocked potentially unsafe protocol "${parsedUrl.protocol}" in attribute "${key}":`, url);
+                        Logger.badge('UNSAFE URL', LOG_STYLES.YELLOW, 'warn', `Blocked potentially unsafe protocol "${parsedUrl.protocol}" in attribute "${key}":`, url);
                     }
                 } catch {
                     el.setAttribute(key, '#');
-                    Logger.warn(`Blocked invalid or relative URL in attribute "${key}":`, url);
+                    Logger.badge('INVALID URL', LOG_STYLES.YELLOW, 'warn', `Blocked invalid or relative URL in attribute "${key}":`, url);
                 }
             }
             // 2. Direct property assignments.
@@ -339,8 +622,10 @@
                 for (const [dataKey, dataVal] of Object.entries(value)) {
                     el.dataset[dataKey] = dataVal;
                 }
-            } else if (key.startsWith('on') && typeof value === 'function') {
-                el.addEventListener(key.slice(2).toLowerCase(), value);
+            } else if (key.startsWith('on')) {
+                if (typeof value === 'function') {
+                    el.addEventListener(key.slice(2).toLowerCase(), value);
+                }
             } else if (key === 'className') {
                 const classes = String(value).trim();
                 if (classes) {
@@ -380,17 +665,6 @@
         return el;
     }
 
-    /**
-     * Recursively builds a DOM element from a definition object using the h() function.
-     * @param {object} def The definition object for the element.
-     * @returns {HTMLElement | SVGElement | null} The created DOM element.
-     */
-    function createIconFromDef(def) {
-        if (!def) return null;
-        const children = def.children ? def.children.map((child) => createIconFromDef(child)) : [];
-        return h(def.tag, def.props, children);
-    }
-
     // =================================================================================
     // SECTION: Configuration Management (GM Storage)
     // =================================================================================
@@ -406,7 +680,13 @@
         }
 
         async load() {
-            const raw = await GM_getValue(this.CONFIG_KEY);
+            let raw = null;
+            try {
+                raw = await GM.getValue(this.CONFIG_KEY);
+            } catch (e) {
+                Logger.error('Failed to load configuration from storage.', e);
+            }
+
             let userConfig = null;
             if (raw) {
                 try {
@@ -418,12 +698,12 @@
             }
 
             const completeConfig = JSON.parse(JSON.stringify(this.DEFAULT_CONFIG));
-            this.config = deepMerge(completeConfig, userConfig || {});
+            this.config = resolveConfig(completeConfig, userConfig || {});
         }
 
         async save(obj) {
             this.config = obj;
-            await GM_setValue(this.CONFIG_KEY, JSON.stringify(obj));
+            await GM.setValue(this.CONFIG_KEY, JSON.stringify(obj));
         }
 
         get() {
@@ -465,153 +745,120 @@
         }
     }
 
-    /**
-     * @abstract
-     * @description Base class for a settings panel/submenu UI component.
-     */
-    class SettingsPanelBase extends UIComponentBase {
+    class SettingsModal extends UIComponentBase {
         constructor(callbacks) {
             super(callbacks);
-            this.debouncedSave = debounce(async () => {
-                const newConfig = await this._collectDataFromForm();
-                EventBus.publish('config:save', newConfig);
+            // Delegate save logic to the _saveConfig method.
+            this.debouncedSave = debounce(() => {
+                this._saveConfig();
             }, CONSTANTS.TIMERS.DEBOUNCE_MS);
-            this._handleDocumentClick = this._handleDocumentClick.bind(this);
+
+            this._handleKeyDown = this._handleKeyDown.bind(this);
+            this.overlay = null;
         }
 
-        render() {
-            // Basic rendering logic, subclasses will provide content.
-            this._injectStyles();
-            this.element = this._createPanelContainer();
-            const content = this._createPanelContent();
-            this.element.appendChild(content);
+        /**
+         * Opens the settings modal.
+         */
+        async open() {
+            if (this.overlay) return;
 
-            document.body.appendChild(this.element);
-            this._setupEventListeners();
-            return this.element;
+            // Prepare the form content
+            this.element = this._createPanelContent();
+            await this.populateForm();
+
+            // Create Overlay and Container
+            this.overlay = h(
+                `div.${APPID}-modal-overlay`,
+                {
+                    onclick: (e) => {
+                        // Close when clicking the overlay background
+                        if (e.target === this.overlay) this.close();
+                    },
+                },
+                [
+                    h(`div.${APPID}-modal-box`, [
+                        // Header
+                        h(`div.${APPID}-modal-header`, [h('span', `${APPNAME} Settings`), h(`button.${APPID}-close-btn`, { onclick: () => this.close(), title: 'Close' }, '✕')]),
+                        // Content
+                        h(`div.${APPID}-modal-content`, [this.element]),
+                    ]),
+                ]
+            );
+
+            this._injectStyles();
+            document.body.appendChild(this.overlay);
+
+            // Add global key listener for ESC
+            document.addEventListener('keydown', this._handleKeyDown);
+        }
+
+        /**
+         * Closes the settings modal.
+         */
+        close() {
+            if (this.overlay) {
+                document.removeEventListener('keydown', this._handleKeyDown);
+
+                // Immediately save pending changes before closing.
+                this.debouncedSave.cancel();
+                this._saveConfig();
+
+                this.overlay.remove();
+                this.overlay = null;
+                this.element = null; // Clear reference
+                this.callbacks.onClose?.();
+            }
+        }
+
+        /**
+         * Collects data and publishes the update event if changes are detected.
+         * Executes synchronously to ensure data capture before DOM destruction.
+         */
+        _saveConfig() {
+            // Do not process if the element is destroyed.
+            if (!this.element) return;
+
+            const currentConfig = this.callbacks.getCurrentConfig();
+            const newConfig = this._collectDataFromForm();
+
+            // Publish save event only if configuration has changed.
+            if (JSON.stringify(currentConfig) !== JSON.stringify(newConfig)) {
+                EventBus.publish(EVENTS.CONFIG_UPDATED, newConfig);
+            }
         }
 
         toggle() {
-            const shouldShow = this.element.style.display === 'none';
-            if (shouldShow) {
-                this.show();
+            if (this.overlay) {
+                this.close();
             } else {
-                this.hide();
+                this.open();
             }
         }
 
         isOpen() {
-            return this.element && this.element.style.display !== 'none';
-        }
-
-        async show() {
-            await this.populateForm();
-            const anchorRect = this.callbacks.getAnchorElement().getBoundingClientRect();
-            this.element.style.display = 'block';
-            // Position panel near the anchor element
-            this.element.style.top = `${anchorRect.bottom + 8}px`;
-            this.element.style.right = `${window.innerWidth - anchorRect.right - anchorRect.width / 2}px`;
-            document.addEventListener('click', this._handleDocumentClick, true);
-        }
-
-        hide() {
-            this.element.style.display = 'none';
-            document.removeEventListener('click', this._handleDocumentClick, true);
-            this.callbacks.onClose?.(); // Notify SyncManager that the panel has closed
-        }
-
-        _createPanelContainer() {
-            return h(`div#${APPID}-settings-panel`, { style: { display: 'none' }, role: 'menu' });
-        }
-
-        _handleDocumentClick(e) {
-            const anchor = this.callbacks.getAnchorElement();
-            if (this.element && !this.element.contains(e.target) && anchor && !anchor.contains(e.target)) {
-                this.hide();
-            }
-        }
-
-        _createPanelContent() {
-            throw new Error('Subclass must implement _createPanelContent()');
-        }
-        _injectStyles() {
-            throw new Error('Subclass must implement _injectStyles()');
-        }
-        populateForm() {
-            throw new Error('Subclass must implement populateForm()');
-        }
-        _collectDataFromForm() {
-            throw new Error('Subclass must implement _collectDataFromForm()');
-        }
-        _setupEventListeners() {
-            throw new Error('Subclass must implement _setupEventListeners()');
-        }
-    }
-
-    // =================================================================================
-    // SECTION: UI Elements - Components and Manager
-    // =================================================================================
-
-    class CustomSettingsButton extends UIComponentBase {
-        constructor(callbacks, options) {
-            super(callbacks);
-            this.options = options;
-            this.id = this.options.id;
-            this.styleId = `${this.id}-style`;
+            return !!this.overlay;
         }
 
         render() {
-            this._injectStyles();
-            this.element = h('button', {
-                id: this.id,
-                title: this.options.title,
-                onclick: (e) => {
-                    e.stopPropagation();
-                    this.callbacks.onClick?.();
-                },
-            });
-            const iconDef = this.options.siteStyles.iconDef;
-            if (iconDef) {
-                this.element.appendChild(createIconFromDef(iconDef));
+            // No-op. Styles are injected when opened.
+            return null;
+        }
+
+        destroy() {
+            this.close();
+            const styleId = `${APPID}-modal-styles`;
+            document.getElementById(styleId)?.remove();
+            this.debouncedSave.cancel();
+            super.destroy();
+        }
+
+        _handleKeyDown(e) {
+            if (e.key === 'Escape') {
+                this.close();
             }
-            document.body.appendChild(this.element);
-            return this.element;
         }
 
-        _injectStyles() {
-            if (document.getElementById(this.styleId)) return;
-            const { zIndex, siteStyles } = this.options;
-            const buttonStyle = CONSTANTS.UI_DEFAULTS.SETTINGS_BUTTON;
-            const style = h('style', {
-                id: this.styleId,
-                textContent: `
-                #${this.id} {
-                    position: fixed;
-                    top: ${buttonStyle.top};
-                    right: ${buttonStyle.right};
-                    z-index: ${zIndex};
-                    width: ${buttonStyle.width};
-                    height: ${buttonStyle.height};
-                    border-radius: ${siteStyles.borderRadius};
-                    background: ${siteStyles.background};
-                    border: 1px solid ${siteStyles.borderColor};
-                    cursor: pointer;
-                    transition: background 0.12s;
-                    display: flex;
-                    align-items: center;
-                    justify-content: center;
-                    padding: 0;
-                }
-                #${this.id}:hover {
-                    background: ${siteStyles.backgroundHover};
-                }
-            `,
-            });
-            document.head.appendChild(style);
-        }
-    }
-
-    class SettingsPanelComponent extends SettingsPanelBase {
         _createPanelContent() {
             const sliderSettings = CONSTANTS.UI_DEFAULTS.SLIDER;
             const createToggle = (id, title) => {
@@ -646,40 +893,48 @@
                     h('label', { htmlFor: `${APPID}-redirect-shorts-toggle` }, 'Redirect Shorts player'),
                     createToggle(`${APPID}-redirect-shorts-toggle`, 'Redirects the Shorts player to the standard video player.'),
                 ]),
-                h('div', { style: { borderTop: '1px solid var(--yt-spec-border-primary, #ddd)', margin: '12px 0' } }),
-                h(`div.${APPID}-submenu-row`, [h('label', { htmlFor: `${APPID}-sync-tabs-toggle` }, 'Sync settings across tabs'), createToggle(`${APPID}-sync-tabs-toggle`, 'Automatically apply settings changes to all open YouTube tabs.')]),
-                h(`div#${APPID}-sync-note.${APPID}-settings-note`, { style: { 'text-align': 'right', color: 'var(--yt-spec-text-brand, #c00)' } }),
+                h(`div.${APPID}-settings-note`, { style: { marginTop: '16px' }, textContent: 'Settings are automatically synced across tabs.' }),
             ]);
         }
 
         async populateForm() {
             const config = await this.callbacks.getCurrentConfig();
+            // Wait for element to be created
+            if (!this.element) return;
+
+            // Helper to update field with Input Guard
+            const updateField = (selector, value, isCheckbox) => {
+                const input = this.element.querySelector(selector);
+                if (!input) return;
+
+                // User Interface Guard:
+                // If the user is actively interacting with this specific input (it has focus),
+                // do NOT overwrite the value. This prevents the slider/toggle from jumping
+                // under the user's cursor during a live update from another tab.
+                if (document.activeElement === input) {
+                    return;
+                }
+
+                if (isCheckbox) {
+                    input.checked = value;
+                } else {
+                    input.value = value;
+                }
+            };
+
+            updateField(`#${APPID}-items-per-row-slider`, config.options.itemsPerRow, false);
             const slider = this.element.querySelector(`#${APPID}-items-per-row-slider`);
-            slider.value = config.options.itemsPerRow;
-            this._updateSliderAppearance(slider);
+            if (slider) this._updateSliderAppearance(slider);
 
-            this.element.querySelector(`#${APPID}-hide-shorts-toggle`).checked = config.options.hideShorts;
-            this.element.querySelector(`#${APPID}-hide-more-topics-toggle`).checked = config.options.hideMoreTopics;
-            this.element.querySelector(`#${APPID}-redirect-shorts-toggle`).checked = config.options.redirectShorts;
-            this.element.querySelector(`#${APPID}-sync-tabs-toggle`).checked = config.options.syncTabs;
-        }
+            updateField(`#${APPID}-hide-shorts-toggle`, config.options.hideShorts, true);
+            updateField(`#${APPID}-hide-more-topics-toggle`, config.options.hideMoreTopics, true);
+            updateField(`#${APPID}-redirect-shorts-toggle`, config.options.redirectShorts, true);
 
-        async _collectDataFromForm() {
-            const currentConfig = await this.callbacks.getCurrentConfig();
-            const newConfig = JSON.parse(JSON.stringify(currentConfig));
-            const slider = this.element.querySelector(`#${APPID}-items-per-row-slider`);
-            newConfig.options.itemsPerRow = parseInt(slider.value, 10);
-
-            newConfig.options.hideShorts = this.element.querySelector(`#${APPID}-hide-shorts-toggle`).checked;
-            newConfig.options.hideMoreTopics = this.element.querySelector(`#${APPID}-hide-more-topics-toggle`).checked;
-            newConfig.options.redirectShorts = this.element.querySelector(`#${APPID}-redirect-shorts-toggle`).checked;
-            newConfig.options.syncTabs = this.element.querySelector(`#${APPID}-sync-tabs-toggle`).checked;
-
-            return newConfig;
+            this._setupEventListeners();
         }
 
         _setupEventListeners() {
-            // Use event delegation for all toggles and the slider for efficiency.
+            // Use event delegation on the content element
             this.element.addEventListener('change', (e) => {
                 if (e.target.matches('input[type="checkbox"]')) {
                     this.debouncedSave();
@@ -693,30 +948,81 @@
             });
         }
 
+        /**
+         * @returns {object} The new configuration object derived from the form state.
+         */
+        _collectDataFromForm() {
+            // Ensure values are read synchronously before DOM destruction in close().
+            const currentConfig = this.callbacks.getCurrentConfig();
+            const newConfig = JSON.parse(JSON.stringify(currentConfig));
+
+            // If panel is closed or element destroyed, do not collect (safety check)
+            if (!this.element) return currentConfig;
+
+            const slider = this.element.querySelector(`#${APPID}-items-per-row-slider`);
+            if (slider) newConfig.options.itemsPerRow = parseInt(slider.value, 10);
+
+            const hideShorts = this.element.querySelector(`#${APPID}-hide-shorts-toggle`);
+            if (hideShorts) newConfig.options.hideShorts = hideShorts.checked;
+
+            const hideMore = this.element.querySelector(`#${APPID}-hide-more-topics-toggle`);
+            if (hideMore) newConfig.options.hideMoreTopics = hideMore.checked;
+
+            const redirect = this.element.querySelector(`#${APPID}-redirect-shorts-toggle`);
+            if (redirect) newConfig.options.redirectShorts = redirect.checked;
+
+            return newConfig;
+        }
+
         _updateSliderAppearance(slider) {
             const display = this.element.querySelector(`#${APPID}-slider-value-display`);
-            display.textContent = slider.value;
+            if (display) display.textContent = slider.value;
         }
 
         _injectStyles() {
-            const styleId = `${APPID}-ui-styles`;
+            const styleId = `${APPID}-modal-styles`;
             if (document.getElementById(styleId)) return;
-            const styles = this.callbacks.siteStyles;
+            const styles = SITE_STYLES.youtube.MODAL_THEME;
+            const zIndex = CONSTANTS.UI_DEFAULTS.MODAL.Z_INDEX;
+
             const style = h('style', {
                 id: styleId,
                 textContent: `
-                #${APPID}-settings-panel {
-                    position: fixed;
-                    width: 250px;
+                .${APPID}-modal-overlay {
+                    position: fixed; top: 0; left: 0; width: 100%; height: 100%;
+                    background: ${styles.overlay_bg};
+                    z-index: ${zIndex};
+                    display: flex; align-items: center; justify-content: center;
+                }
+                .${APPID}-modal-box {
                     background: ${styles.bg};
                     color: ${styles.text_primary};
+                    width: 360px;
+                    max-width: 90vw;
                     border: 1px solid ${styles.border_default};
                     border-radius: 12px;
-                    box-shadow: 0 4px 4px rgba(0,0,0,0.3);
-                    padding: 16px;
-                    z-index: 11000;
+                    box-shadow: 0 4px 16px rgb(0 0 0 / 0.3);
+                    display: flex; flex-direction: column;
                     font-size: 14px;
-                    transform: translateX(50%);
+                }
+                .${APPID}-modal-header {
+                    padding: 12px 16px;
+                    font-size: 1.1em; font-weight: bold;
+                    border-bottom: 1px solid ${styles.border_default};
+                    display: flex; justify-content: space-between; align-items: center;
+                }
+                .${APPID}-close-btn {
+                    background: none; border: none; cursor: pointer;
+                    font-size: 18px; color: ${styles.text_secondary};
+                    padding: 0 4px;
+                }
+                .${APPID}-close-btn:hover {
+                    color: ${styles.text_primary};
+                }
+                .${APPID}-modal-content {
+                    padding: 16px;
+                    overflow-y: auto;
+                    max-height: 80vh;
                 }
                 .${APPID}-submenu-row, .${APPID}-submenu-row-stacked {
                     display: flex;
@@ -728,7 +1034,7 @@
                 }
                 .${APPID}-submenu-row-stacked {
                     flex-direction: column;
-                    align-items: stretch; /* Stretch children to fill width */
+                    align-items: stretch;
                 }
                 .${APPID}-slider-wrapper {
                     display: flex; align-items: center; gap: 16px;
@@ -777,13 +1083,17 @@
                     text-align: left;
                 }
                 #${APPID}-sync-note {
-                    min-height: 1.5em; /* Reserve space for the message */
+                    min-height: 1.5em;
                 }
             `,
             });
             document.head.appendChild(style);
         }
     }
+
+    // =================================================================================
+    // SECTION: UI Elements - Components and Manager
+    // =================================================================================
 
     class UIManager {
         constructor(getCurrentConfig, siteStyles, callbacks = {}) {
@@ -794,24 +1104,25 @@
         }
 
         init() {
-            this.components.settingsBtn = new CustomSettingsButton(
-                { onClick: () => this.components.settingsPanel.toggle() },
-                {
-                    id: `${APPID}-settings-btn`,
-                    title: `${APPNAME} Settings`,
-                    zIndex: CONSTANTS.UI_DEFAULTS.SETTINGS_BUTTON.zIndex,
-                    siteStyles: this.siteStyles.SETTINGS_BUTTON,
-                }
-            );
-            this.components.settingsPanel = new SettingsPanelComponent({
+            // Initialize the modal component (it won't render until opened)
+            this.components.settingsModal = new SettingsModal({
                 getCurrentConfig: this.getCurrentConfig,
-                getAnchorElement: () => this.components.settingsBtn.element,
-                siteStyles: this.siteStyles.SETTINGS_PANEL,
                 onClose: this.callbacks.onPanelClose, // Pass the callback down
             });
 
-            this.components.settingsBtn.render();
-            this.components.settingsPanel.render();
+            // Register the menu command to open settings
+            GM.registerMenuCommand('Open Settings', () => {
+                this.components.settingsModal.toggle();
+            });
+        }
+
+        destroy() {
+            Object.values(this.components).forEach((component) => {
+                if (component && typeof component.destroy === 'function') {
+                    component.destroy();
+                }
+            });
+            this.components = {};
         }
     }
 
@@ -822,35 +1133,38 @@
     class SyncManager {
         constructor(app) {
             this.app = app;
-            this.pendingRemoteConfig = null;
+            this.listenerId = null;
         }
 
-        init() {
-            GM_addValueChangeListener(CONSTANTS.CONFIG_KEY, this._handleRemoteChange.bind(this));
+        async init() {
+            this.listenerId = await GM.addValueChangeListener(CONSTANTS.CONFIG_KEY, this._handleRemoteChange.bind(this));
         }
 
-        /**
-         * Called by MainApp when a local save occurs.
-         */
-        onSave() {
-            this.pendingRemoteConfig = null;
-            this._clearConflictNotification();
-        }
-
-        /**
-         * Called by MainApp (via UIManager) when the settings panel is closed.
-         */
-        onPanelClose() {
-            if (this.pendingRemoteConfig) {
-                Logger.log('Applying pending remote config after panel closed.');
-                this.app.applyRemoteUpdate(this.pendingRemoteConfig);
-                this.pendingRemoteConfig = null;
-                this._clearConflictNotification();
+        async destroy() {
+            if (this.listenerId) {
+                await GM.removeValueChangeListener(this.listenerId);
+                this.listenerId = null;
             }
         }
 
         /**
-         * Handles the GM_addValueChangeListener event.
+         * Called by AppController when a local save occurs.
+         * No specific action needed for now, but kept for interface consistency.
+         */
+        onSave() {
+            // No-op
+        }
+
+        /**
+         * Called by AppController (via UIManager) when the settings panel is closed.
+         * No specific action needed for now, but kept for interface consistency.
+         */
+        onPanelClose() {
+            // No-op
+        }
+
+        /**
+         * Handles the GM.addValueChangeListener event.
          * @private
          */
         async _handleRemoteChange(name, oldValue, newValue, remote) {
@@ -865,7 +1179,7 @@
                 return;
             }
 
-            Logger.log('Remote config change detected.');
+            Logger.log('Remote config change detected. Applying live update.');
             let newConfig;
             try {
                 newConfig = JSON.parse(newValue);
@@ -874,45 +1188,8 @@
                 return;
             }
 
-            // Check the INCOMING config to see if sync is enabled.
-            // This allows a tab to RECEIVE a "sync on" command from another tab.
-            if (!newConfig.options.syncTabs) {
-                this.app.configManager.config.options.syncTabs = false; // Only update the sync option
-                Logger.log('Sync disabled remotely. Updating local config state only.');
-                return;
-            }
-
-            // Guard: UIManager might not be initialized yet
-            if (this.app.uiManager && this.app.uiManager.components.settingsPanel.isOpen()) {
-                Logger.log('Settings panel is open. Deferring update and showing notification.');
-                this.pendingRemoteConfig = newConfig;
-                this._showConflictNotification();
-            } else {
-                Logger.log('Applying silent remote update.');
-                this.app.applyRemoteUpdate(newConfig);
-            }
-        }
-
-        /**
-         * Displays a notification in the settings panel about a remote change.
-         * @private
-         */
-        _showConflictNotification() {
-            const noteElement = document.querySelector(`#${APPID}-sync-note`);
-            if (noteElement) {
-                noteElement.textContent = 'Updated in another tab. Reopen to see changes.';
-            }
-        }
-
-        /**
-         * Clears the notification in the settings panel.
-         * @private
-         */
-        _clearConflictNotification() {
-            const noteElement = document.querySelector(`#${APPID}-sync-note`);
-            if (noteElement) {
-                noteElement.textContent = '';
-            }
+            // Always apply the remote update immediately (Live Update)
+            this.app.applyRemoteUpdate(newConfig);
         }
     }
 
@@ -927,6 +1204,13 @@
             if (this.styleElement) return;
             this.styleElement = h('style', { id: `${APPID}-dynamic-styles` });
             document.head.appendChild(this.styleElement);
+        }
+
+        static destroy() {
+            if (this.styleElement) {
+                this.styleElement.remove();
+                this.styleElement = null;
+            }
         }
 
         static update(options) {
@@ -981,12 +1265,18 @@
     // SECTION: Main Application Controller
     // =================================================================================
 
-    class MainApp {
+    class AppController {
         constructor() {
             this.configManager = null;
             this.uiManager = null;
             this.syncManager = new SyncManager(this);
             this.configPromise = null; // Promise for config load
+            this.subscriptions = [];
+
+            // Bind handlers to preserve 'this' context for addEventListener/removeEventListener
+            this.handleRedirectBound = this.handleRedirect.bind(this);
+            this.handleNavigationBound = this.handleNavigation.bind(this);
+            this.initDOMComponentsBound = this.initDOMComponents.bind(this);
 
             // Promise to resolve when DOM-dependent components are initialized
             this.domReadyPromise = new Promise((resolve) => {
@@ -1006,13 +1296,48 @@
 
             this.syncManager.init(); // Initialize the sync listener.
 
-            // Register all event listeners immediately to prevent race conditions
-            EventBus.subscribe('config:save', this.handleSave.bind(this));
-            document.addEventListener('yt-navigate-start', this.handleRedirect.bind(this));
-            document.addEventListener('yt-navigate-finish', this.handleNavigation.bind(this));
+            // Apply styles immediately after config load to prevent FOUC.
+            // This runs as soon as config is ready, without waiting for DOMContentLoaded.
+            this.configPromise.then(() => {
+                // Ensure document.head exists (it usually does by the time config loads)
+                if (!document.head) return;
+                StyleManager.init();
+                const config = this.configManager.get();
+                if (config) {
+                    StyleManager.update(config.options);
+                }
+            });
 
-            // Register Stage 2: Initialize DOM components when ready
-            document.addEventListener('DOMContentLoaded', this.initDOMComponents.bind(this));
+            // Register all event listeners immediately to prevent race conditions
+            this._subscribe(EVENTS.CONFIG_UPDATED, this.handleSave.bind(this));
+            document.addEventListener('yt-navigate-start', this.handleRedirectBound);
+            document.addEventListener('yt-navigate-finish', this.handleNavigationBound);
+
+            // Register Stage 2: Initialize DOM components when ready.
+            // Check readyState to ensure initialization runs even if DOM is already loaded.
+            if (document.readyState === 'loading') {
+                document.addEventListener('DOMContentLoaded', this.initDOMComponentsBound);
+            } else {
+                this.initDOMComponentsBound();
+            }
+        }
+
+        /**
+         * Helper to subscribe to EventBus and track the subscription for cleanup.
+         * Appends the listener name and a unique suffix to the key to avoid conflicts.
+         * @param {string} event
+         * @param {Function} listener
+         */
+        _subscribe(event, listener) {
+            const baseKey = createEventKey(this, event);
+            // Use function name for debugging aid, fallback to 'anonymous'
+            const listenerName = listener.name || 'anonymous';
+            // Generate a short random suffix to guarantee uniqueness even for anonymous functions
+            const uniqueSuffix = Math.random().toString(36).substring(2, 7);
+            const key = `${baseKey}_${listenerName}_${uniqueSuffix}`;
+
+            EventBus.subscribe(event, listener, key);
+            this.subscriptions.push({ event, key });
         }
 
         /**
@@ -1028,8 +1353,7 @@
 
             StyleManager.init();
 
-            const siteStyles = SITE_STYLES.youtube;
-            this.uiManager = new UIManager(() => this.configManager.get(), siteStyles, {
+            this.uiManager = new UIManager(() => this.configManager.get(), {
                 onPanelClose: () => this.syncManager.onPanelClose(),
             });
             this.uiManager.init();
@@ -1039,6 +1363,28 @@
 
             // Signal that DOM initialization is complete
             this.resolveDomReadyPromise();
+        }
+
+        async destroy() {
+            // 1. Unsubscribe from EventBus
+            this.subscriptions.forEach(({ event, key }) => EventBus.unsubscribe(event, key));
+            this.subscriptions = [];
+
+            // 2. Remove DOM event listeners
+            document.removeEventListener('yt-navigate-start', this.handleRedirectBound);
+            document.removeEventListener('yt-navigate-finish', this.handleNavigationBound);
+            document.removeEventListener('DOMContentLoaded', this.initDOMComponentsBound);
+
+            // 3. Destroy sub-managers
+            if (this.uiManager) {
+                this.uiManager.destroy();
+            }
+            if (this.syncManager) {
+                await this.syncManager.destroy();
+            }
+
+            // 4. Clean up static StyleManager
+            StyleManager.destroy();
         }
 
         /**
@@ -1062,10 +1408,10 @@
             this.configManager.config = newConfig;
             this.applySettings();
 
-            // Guard: UIManager might not be initialized yet
-            if (this.uiManager) {
-                // Repopulate the form in case the user opens it later.
-                this.uiManager.components.settingsPanel.populateForm();
+            // Live Update: If the modal is open, refresh its state.
+            // populateForm() has built-in guards to avoid interrupting active user input.
+            if (this.uiManager && this.uiManager.components.settingsModal && this.uiManager.components.settingsModal.isOpen()) {
+                this.uiManager.components.settingsModal.populateForm();
             }
         }
 
@@ -1078,10 +1424,11 @@
             this.applySettings();
         }
 
-        async handleRedirect(e) {
-            await this.configPromise; // Wait for config
+        handleRedirect(e) {
             const config = this.configManager.get();
-            if (!config.options.redirectShorts) return;
+
+            // If config is not loaded yet or redirect is disabled, do nothing.
+            if (!config || !config.options.redirectShorts) return;
 
             const urlString = e.detail.url;
             if (!urlString) return;
@@ -1118,7 +1465,6 @@
     if (ExecutionGuard.hasExecuted()) return;
     ExecutionGuard.setExecuted();
 
-    Logger.log('Script loaded. Initializing Stage 1...');
-    const app = new MainApp();
-    app.init(); // Run Stage 1 initialization immediately
+    const app = new AppController();
+    app.init();
 })();
