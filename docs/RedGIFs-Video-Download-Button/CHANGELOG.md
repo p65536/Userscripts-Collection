@@ -1,5 +1,13 @@
 # Changelog
 
+## [2.1.0] - 2025-12-21
+- **Fixes**
+  - **[Mobile]** Fixed an issue where hiding "Live Cam" sections left large blank spaces in the feed.
+  - **[Home]** Fixed the "OnlyFans creators" section reappearing due to recent site changes.
+- **Improvements**
+  - Refactored annoyance removal logic to use robust data attributes, improving resilience to future site updates.
+  - Removed obsolete detection logic for "Boosted posts" and simplified platform-specific checks to improve performance.
+
 ## [2.0.0] - 2025-12-03
 - **New Features**
   - Added a new **Settings Menu** (accessible via the script manager) to customize preferences directly within the UI.
