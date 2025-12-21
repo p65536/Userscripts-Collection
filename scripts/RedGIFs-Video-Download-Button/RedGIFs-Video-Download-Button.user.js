@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         RedGIFs Video Download Button
 // @namespace    https://github.com/p65536
-// @version      2.0.0
+// @version      2.1.0
 // @license      MIT
 // @description  Adds a download button (for one-click HD downloads) and an "Open in New Tab" button to each video on the RedGIFs site.
 // @icon         https://www.redgifs.com/favicon.ico
@@ -1826,11 +1826,18 @@
                 }
 
                 /* Feed Modules (Suggested/Trending Niches, Suggested/Trending Creators, Mobile OF Creators, Niche Explorer) */
+                /* Backward compatibility: Keep existing class-based selectors combined with new attribute-based selectors */
                 .FeedModule:has(.nicheListWidget.trendingNiches),
+                .FeedModule[data-feed-module-type="trending-niches"],
                 .FeedModule:has(.seeMoreBlock.suggestedCreators),
+                .FeedModule[data-feed-module-type="suggested-creators"],
                 .FeedModule:has(.seeMoreBlock.trendingCreators),
+                .FeedModule[data-feed-module-type="trending-creators"],
                 .FeedModule:has(.OnlyFansCreatorsModule),
-                .FeedModule:has(.nicheExplorer) {
+                .FeedModule[data-feed-module-type="only-fans"],
+                .FeedModule:has(.nicheExplorer),
+                .FeedModule[data-feed-module-type="suggested-niches"],
+                .FeedModule[data-feed-module-type="live-cam"] {
                     display: none !important;
                 }
 
@@ -1854,61 +1861,20 @@
          * @param {Sentinel} sentinel - The Sentinel instance.
          */
         removeElements(sentinel) {
-            // --- Section: Platform-Specific Dynamic Ad Hiding ---
-            // This logic detects the platform (phone/desktop) once on load and registers the appropriate ad hider for that platform.
-
-            // --- Developer Note: Platform Detection ---
-            // This logic determines the platform (phone/desktop) ONCE on page load.
-            // It intentionally does NOT handle dynamic platform switching because the site itself does not support it (at least for now).
-            //
-            // TO TEST MOBILE ON DESKTOP: Enable device emulation in DevTools AND THEN reload the page.
-            // ---
-
-            let platformDetermined = false;
-
+            // Helper to hide ad containers (VisibleOnly elements often cause layout shifts or blank spaces)
             const adHider = (adElement) => {
                 const adContainer = adElement.closest('.GifPreview.VisibleOnly');
                 if (adContainer) {
-                    // Do NOT use .remove() as it breaks the site's virtual DOM state, causing black screens on navigation.
-                    // Instead, apply an inline !important style to win the CSS specificity war.
+                    // Do NOT use .remove() as it breaks the site's virtual DOM state.
+                    // Use inline style to force hide.
                     adContainer.style.setProperty('display', 'none', 'important');
                 }
             };
 
-            // Define listener callbacks so they can be unregistered later.
-            const onPhoneFound = () => {
-                if (platformDetermined) return;
-                platformDetermined = true;
-                Logger.badge('PLATFORM', LOG_STYLES.INFO, 'log', 'Mobile platform detected');
-                sentinel.on('[data-videoads="adsVideo"]', adHider);
-                // Unregister the other platform watcher
-                sentinel.off('.App.desktop', onDesktopFound);
-            };
-
-            const onDesktopFound = () => {
-                if (platformDetermined) return;
-                platformDetermined = true;
-                Logger.badge('PLATFORM', LOG_STYLES.INFO, 'log', 'Desktop platform detected');
-                sentinel.on('[class*="_StreamateCamera_"]', adHider);
-                // Unregister the other platform watcher
-                sentinel.off('.App.phone', onPhoneFound);
-            };
-
-            // Rely on Sentinel to detect the platform class when it appears.
-            Logger.badge('PLATFORM', LOG_STYLES.INFO, 'log', 'Awaiting platform detection...');
-            sentinel.on('.App.phone', onPhoneFound);
-            sentinel.on('.App.desktop', onDesktopFound);
-
-            // --- Section: General Annoyance Hiding ---
-            // These are platform-independent rules that simply hide specific elements.
-
-            // Handle Boosted Ad Posts
-            sentinel.on('.metaInfo_isBoosted', (infoElement) => {
-                const container = infoElement.closest('.GifPreview');
-                if (container) {
-                    container.style.setProperty('display', 'none', 'important');
-                }
-            });
+            // --- Unified Annoyance Hiding ---
+            // Handles Live Cam streams (Streamate) on both Desktop and Mobile.
+            // Selectors are updated to match current site structure (.StreamateCameraDispatcher).
+            sentinel.on('.StreamateCameraDispatcher', adHider);
         }
     }
 
