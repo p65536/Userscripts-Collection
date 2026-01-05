@@ -1,5 +1,12 @@
 # Changelog
 
+## [2.2.0] - 2026-01-05
+- **New Features**
+  - **[Ad Blocking]** Restored logic to hide "Boosted" posts (ads) visible to guest users, with improved detection for mobile feeds.
+- **Core Changes**
+  - **[Refactoring]** Modernized the internal logging system and CSS syntax (`rgb`) for better maintainability.
+  - **[Stability]** Improved the robustness of internal data processing (object cloning) to prevent potential errors.
+
 ## [2.1.0] - 2025-12-21
 - **Fixes**
   - **[Mobile]** Fixed an issue where hiding "Live Cam" sections left large blank spaces in the feed.
