@@ -38,9 +38,18 @@ This script enhances your RedGIFs experience by adding convenient buttons to eac
 
 It also features **customizable user settings** (e.g., Hover Mode) and a powerful **Annoyance & Ad Remover** to clean up the UI.
 
-| Platform | GitHub | Greasy Fork | Version | Last Updated | Changelog |
-| :--- | :--- | :--- | :--- | :--- | :--- |
-| **RedGifs** | [![Download](https://img.shields.io/badge/Download-blue?style=flat-square&logo=download)](https://raw.githubusercontent.com/p65536/Userscripts-Collection/main/scripts/RedGIFs-Video-Download-Button/RedGIFs-Video-Download-Button.user.js) | [![Greasy Fork](https://img.shields.io/badge/Install-green?style=flat-square&logo=greasyfork)](https://greasyfork.org/en/scripts/545472-redgifs-video-download-button) | 2.2.0 | 2026-01-05 | [View](./docs/RedGIFs-Video-Download-Button/CHANGELOG.md) |
+> **Note**  
+> This script is published on both **Greasy Fork** and **Sleazy Fork**.
+> 
+> - **Greasy Fork**: Well-known userscript platform, but NSFW scripts require login to view.  
+> - **Sleazy Fork**: A sister site of Greasy Fork dedicated to adult content, accessible without login.
+> 
+> If you cannot view the script page on Greasy Fork, please use the Sleazy Fork link instead.
+
+| Platform | GitHub | Greasy Fork | Sleazy Fork | Version | Last Updated | Changelog |
+| :--- | :--- | :--- | :--- | :--- | :--- | :--- |
+| **RedGifs** | [![Download](https://img.shields.io/badge/Download-blue?style=flat-square&logo=download)](https://raw.githubusercontent.com/p65536/Userscripts-Collection/main/scripts/RedGIFs-Video-Download-Button/RedGIFs-Video-Download-Button.user.js) | [![Greasy Fork](https://img.shields.io/badge/Install-green?style=flat-square&logo=greasyfork)](https://greasyfork.org/en/scripts/545472-redgifs-video-download-button) | [![Sleazy Fork](https://img.shields.io/badge/Install-pink?style=flat-square&logo=greasyfork)](https://sleazyfork.org/en/scripts/545472-redgifs-video-download-button) | 2.2.0 | 2026-01-05 | [View](./docs/RedGIFs-Video-Download-Button/CHANGELOG.md) |
+
 
 <details>
   <summary>Getting Started (Click to expand)</summary>
