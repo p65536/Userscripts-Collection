@@ -1,5 +1,9 @@
 # Changelog
 
+## [2.2.1] - 2026-01-08
+- **Core Changes**
+  - **[Stability]** Fixed a potential issue where internal data errors were silently ignored during processing. The system now strictly validates data integrity to prevent unexpected behavior or settings corruption.
+
 ## [2.2.0] - 2026-01-05
 - **New Features**
   - **[Ad Blocking]** Restored logic to hide "Boosted" posts (ads) visible to guest users, with improved detection for mobile feeds.

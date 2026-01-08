@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         RedGIFs Video Download Button
 // @namespace    https://github.com/p65536
-// @version      2.2.0
+// @version      2.2.1
 // @license      MIT
 // @description  Adds a download button (for one-click HD downloads) and an "Open in New Tab" button to each video on the RedGIFs site.
 // @icon         https://www.redgifs.com/favicon.ico
@@ -821,16 +821,8 @@
         try {
             return structuredClone(obj);
         } catch (e) {
-            Logger.error('CLONE FAILED', '', 'deepClone failed, falling back to shallow copy.', e);
-            // Fallback strategy: Shallow copy
-            if (Array.isArray(obj)) {
-                return /** @type {any} */ ([...obj]);
-            }
-            if (obj && typeof obj === 'object') {
-                return /** @type {any} */ ({ ...obj });
-            }
-            // Return original if primitive or special type
-            return obj;
+            Logger.error('CLONE FAILED', '', 'deepClone failed. Data contains non-clonable items.', e);
+            throw e;
         }
     }
 
@@ -979,7 +971,6 @@
         _logAggregation: {},
         // prettier-ignore
         _aggregatedEvents: new Set([
-            EVENTS.UI_REPOSITION,
         ]),
         _aggregationDelay: 500, // ms
 
