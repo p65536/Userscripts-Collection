@@ -13,7 +13,7 @@ A collection of simple, single-purpose userscripts for various websites.
 ## Recent Updates
 
 ### 2026-01-08
-- Published a new script `Image Search Direct View` (v1.0.1)  
+- Updated `Image Search Direct View` (v1.0.0 -> v1.0.1)  
 
 ### 2026-01-04
 - Published a new script `Image Search Direct View` (v1.0.0)  
