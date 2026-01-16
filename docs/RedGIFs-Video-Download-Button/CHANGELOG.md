@@ -1,5 +1,18 @@
 # Changelog
 
+## [2.3.0] - 2026-01-16
+- **New Features**
+  - **[Viewer]** Introduced a **Clean Viewer** mode that opens videos in a minimalist, distraction-free player tab instead of the full watch page.
+    - Added a "Viewer Type" option in the settings panel to toggle between the Default view and the new Clean Viewer.
+    - The clean interface features autoplay (muted) for immediate playback and includes a convenient link to navigate back to the original page.
+- **UI Fixes**
+  - Fixed an issue where RGVDB buttons overlapped the site's navigation menu.
+  - Buttons are now automatically hidden when the navigation menu is expanded to prevent interference.
+  - Adjusted the button's z-index to ensure they stay correctly behind site headers and menus.
+- **Core Changes**
+  - Optimized the internal mechanism for detecting video data.
+  - This update improves the script's compatibility with modern browser environments and future site updates, ensuring long-term stability without altering current functionality.
+
 ## [2.2.1] - 2026-01-08
 - **Core Changes**
   - **[Stability]** Fixed a potential issue where internal data errors were silently ignored during processing. The system now strictly validates data integrity to prevent unexpected behavior or settings corruption.
