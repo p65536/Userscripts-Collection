@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         Image-Search-Direct-View
 // @namespace    https://github.com/p65536
-// @version      1.1.0
+// @version      1.1.1
 // @license      MIT
 // @description  Adds a "View Image" button to Image Search results. [Supported sites: Bing / DuckDuckGo / Google]
 // @icon         https://raw.githubusercontent.com/p65536/p65536/main/images/isdv.svg
@@ -2984,11 +2984,11 @@
 
         /**
          * Returns the CSS selector for the sentinel element.
-         * Targets the container with 'data-lpage' and 'data-docid' which represents a single result card.
+         * Targets the anchor tags with /imgres (New Layout) first, then falls back to the container with 'data-docid' (Old Layout).
          * @returns {string}
          */
         getSentinelSelector() {
-            return 'div[data-lpage][data-docid], a[href*="/imgres"]';
+            return 'a[href*="/imgres"], div[data-lpage][data-docid]';
         }
 
         /**
@@ -3085,25 +3085,36 @@
          * Asynchronously fetches the original image URL by interacting with the detailed panel.
          *
          * Flow:
-         * 1. Triggers a click on the card to open the detailed panel (side panel).
-         * 2. Uses CSS injection to keep the panel invisible (Stealth Mode).
-         * 3. Observes the DOM for the specific panel creation and image src update using MutationObserver.
-         * 4. Extracts the high-res URL from the panel's image element once loaded.
-         * 5. Closes the panel to restore state.
+         * 1. [New Structure] Checks for /imgres links and extracts URL params immediately.
+         * 2. [Old Structure] Checks for 'data-docid' and triggers side panel interaction.
+         * 3. [Fallback] Returns null if neither structure is matched.
          *
          * @param {HTMLElement} sentinel - The sentinel element.
          * @returns {Promise<string|null>} The original image URL or null.
          */
         async fetchOriginalImageUrl(sentinel) {
+            // 1. New Structure Strategy: Anchor tag with /imgres
+            if (sentinel.tagName === 'A' && sentinel.href.includes('/imgres')) {
+                try {
+                    const params = new URLSearchParams(new URL(sentinel.href).search);
+                    return params.get('imgurl');
+                } catch (e) {
+                    return null;
+                }
+            }
+
+            // 2. Old Structure Strategy: Element with data-docid
+            // If the element does NOT have a docid, it's not a valid old-structure sentinel.
+            // We return null immediately to avoid false positive warnings.
+            if (!sentinel.dataset.docid) {
+                return null;
+            }
+
+            // At this point, we are certain it's an old-structure element.
+            // Proceed with the expensive async operation.
             return new Promise((resolve) => {
                 const docId = sentinel.dataset.docid;
                 const lpage = sentinel.dataset.lpage;
-
-                if (!docId) {
-                    Logger.warn('ASYNC_FAIL', '', 'Google: "data-docid" missing on sentinel.');
-                    resolve(null);
-                    return;
-                }
 
                 // Identify the trigger button (div[role="button"]) inside the sentinel
                 const trigger = sentinel.querySelector('div[role="button"]');
