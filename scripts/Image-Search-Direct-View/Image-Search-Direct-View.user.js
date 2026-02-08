@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         Image-Search-Direct-View
 // @namespace    https://github.com/p65536
-// @version      1.0.1
+// @version      1.1.0
 // @license      MIT
 // @description  Adds a "View Image" button to Image Search results. [Supported sites: Bing / DuckDuckGo / Google]
 // @icon         https://raw.githubusercontent.com/p65536/p65536/main/images/isdv.svg
@@ -2988,7 +2988,7 @@
          * @returns {string}
          */
         getSentinelSelector() {
-            return 'div[data-lpage][data-docid]';
+            return 'div[data-lpage][data-docid], a[href*="/imgres"]';
         }
 
         /**
@@ -3005,7 +3005,12 @@
                 return;
             }
 
-            const link = element.querySelector('a');
+            // Support both old (div) and new (a) sentinel structures
+            let link = element;
+            if (element.tagName !== 'A') {
+                link = element.querySelector('a');
+            }
+
             if (!link) return;
 
             // Attach buttons to the parent of the link to ensure they overlay the image correctly.
@@ -3019,8 +3024,8 @@
          * Extracts URLs from a Google result element.
          *
          * Strategy:
-         * 1. **Image URL**: Returns null to force the Async Fetcher (`fetchOriginalImageUrl`) to run.
-         * 2. **Host URL**: Extracted directly from the `data-lpage` attribute of the sentinel.
+         * 1. **Image URL**: Checks for 'imgurl' parameter in /imgres links (New Structure) or returns null (Old Structure).
+         * 2. **Host URL**: Extracted from 'imgrefurl' parameter or 'data-lpage' attribute.
          * 3. **Thumbnail URL**: Extracted from the `img` tag inside the card.
          *
          * @param {HTMLElement} element - The sentinel element.
@@ -3032,12 +3037,38 @@
             let hostUrlSource = null;
             let thumbnailUrl = null;
 
-            // 1. Extract Host Page URL from 'data-lpage' attribute
-            if (element.dataset.lpage) {
+            // Try extraction from /imgres URL parameters (New Structure: 2026-02-08)
+            let linkHref = null;
+            if (element.tagName === 'A') {
+                linkHref = element.href;
+            } else {
+                const link = element.querySelector('a');
+                if (link) linkHref = link.href;
+            }
+
+            if (linkHref && linkHref.includes('/imgres')) {
+                try {
+                    const urlObj = new URL(linkHref);
+                    const params = new URLSearchParams(urlObj.search);
+                    if (params.has('imgurl')) {
+                        imageUrl = params.get('imgurl');
+                    }
+                    if (params.has('imgrefurl')) {
+                        hostUrl = params.get('imgrefurl');
+                        hostUrlSource = 'URL-PARAM';
+                    }
+                } catch (e) {
+                    // Ignore parse errors
+                }
+            }
+
+            // 1. Extract Host Page URL from 'data-lpage' attribute (Fallback for Old Structure)
+            if (!hostUrl && element.dataset.lpage) {
                 hostUrl = element.dataset.lpage;
                 hostUrlSource = 'DATA-ATTR';
-            } else {
-                Logger.error('EXTRACTION_FAIL', '', 'Google: "data-lpage" attribute missing.');
+            } else if (!hostUrl && !imageUrl) {
+                // Log only if both strategies failed
+                Logger.error('EXTRACTION_FAIL', '', 'Google: Host URL extraction failed.');
             }
 
             // 2. Extract Thumbnail URL
@@ -3046,7 +3077,7 @@
                 thumbnailUrl = imgEl.getAttribute('data-src') || imgEl.getAttribute('src');
             }
 
-            // Image URL is intentionally null to trigger async fetch
+            // Image URL is intentionally null to trigger async fetch (if not found in params)
             return { imageUrl, hostUrl, hostUrlSource, thumbnailUrl };
         }
 

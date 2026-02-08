@@ -1,5 +1,9 @@
 # Changelog
 
+## [1.1.0] - 2026-02-08
+- **Fixes**
+  - **[Google]** Resolved compatibility issues caused by recent changes to the Google Image Search HTML structure, restoring button functionality.
+
 ## [1.0.1] - 2026-01-08
 - **Core Changes**
   - **[Stability]** Fixed a potential issue where internal data errors were silently ignored during processing. The system now strictly validates data integrity to prevent unexpected behavior or settings corruption.
