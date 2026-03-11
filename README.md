@@ -12,6 +12,9 @@ A collection of simple, single-purpose userscripts for various websites.
 
 ## Recent Updates
 
+### 2026-03-11
+- Updated `YouTube UI Customizer` (v1.3.0 -> v1.3.1)  
+
 ### 2026-02-08
 - Updated `Image Search Direct View` (v1.0.1 -> v1.1.1)  
 
@@ -21,9 +24,6 @@ A collection of simple, single-purpose userscripts for various websites.
 ### 2026-01-04
 - Published a new script `Image Search Direct View` (v1.0.0)  
 - Separated NSFW scripts to [`NSFW.md`](./NSFW.md)
-
-### 2025-12-07
-- Updated `YouTube UI Customizer` (v1.2.1 -> v1.3.0)  
 
 ---
 
@@ -39,7 +39,7 @@ A script that enhances your YouTube experience. You can customize the video grid
 
 | Platform | GitHub | Greasy Fork | Version | Last Updated | Changelog |
 | :--- | :--- | :--- | :--- | :--- | :--- |
-| **YouTube** | [![Download](https://img.shields.io/badge/Download-blue?style=flat-square&logo=download)](https://raw.githubusercontent.com/p65536/Userscripts-Collection/main/scripts/YouTube-UI-Customizer/YouTube-UI-Customizer.user.js) | [![Greasy Fork](https://img.shields.io/badge/Install-green?style=flat-square&logo=greasyfork)](https://greasyfork.org/en/scripts/546668-youtube-ui-customizer) | 1.3.0 | 2025-12-07 | [View](./docs/YouTube-UI-Customizer/CHANGELOG.md) |
+| **YouTube** | [![Download](https://img.shields.io/badge/Download-blue?style=flat-square&logo=download)](https://raw.githubusercontent.com/p65536/Userscripts-Collection/main/scripts/YouTube-UI-Customizer/YouTube-UI-Customizer.user.js) | [![Greasy Fork](https://img.shields.io/badge/Install-green?style=flat-square&logo=greasyfork)](https://greasyfork.org/en/scripts/546668-youtube-ui-customizer) | 1.3.1 | 2026-03-12 | [View](./docs/YouTube-UI-Customizer/CHANGELOG.md) |
 
 <details>
   <summary>Getting Started (Click to expand)</summary>

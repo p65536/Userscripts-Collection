@@ -1,9 +1,9 @@
 // ==UserScript==
 // @name         YouTube-UI-Customizer
 // @namespace    https://github.com/p65536
-// @version      1.3.0
+// @version      1.3.1
 // @license      MIT
-// @description  Enhances your YouTube experience. Customize the video grid layout by adjusting thumbnails per row, hide Shorts content, and automatically redirect the Shorts player to the standard video player.
+// @description  Customize your YouTube grid layout (thumbnails per row) and declutter your feed by hiding Shorts, Game Room, and 'Explore' sections. Includes an automatic Shorts-to-standard-player redirect.
 // @icon         https://www.youtube.com/favicon.ico
 // @author       p65536
 // @match        https://www.youtube.com/*
@@ -241,6 +241,7 @@
                 'grid-shelf-view-model:has(ytm-shorts-lockup-view-model)',
             ],
             moreTopics: 'ytd-rich-section-renderer:has(ytd-chips-shelf-with-video-shelf-renderer)',
+            gameRoom: ['ytd-rich-section-renderer:has(ytd-mini-game-card-view-model)'],
         },
         UI_DEFAULTS: {
             MODAL: {
@@ -259,6 +260,7 @@
             itemsPerRow: 5,
             hideShorts: true,
             hideMoreTopics: true,
+            hideGameRoom: true,
             redirectShorts: true,
         },
     };
@@ -888,6 +890,10 @@
                     h('label', { htmlFor: `${APPID}-hide-more-topics-toggle` }, "Hide 'Explore more topics'"),
                     createToggle(`${APPID}-hide-more-topics-toggle`, "Hides the 'Explore more topics' section from the feed."),
                 ]),
+                h(`div.${APPID}-submenu-row`, { style: { marginTop: '12px' } }, [
+                    h('label', { htmlFor: `${APPID}-hide-game-room-toggle` }, 'Hide Game Room'),
+                    createToggle(`${APPID}-hide-game-room-toggle`, 'Hides the Game Room (Playables) section from the feed.'),
+                ]),
                 h('div', { style: { borderTop: '1px solid var(--yt-spec-border-primary, #ddd)', margin: '12px 0' } }),
                 h(`div.${APPID}-submenu-row`, [
                     h('label', { htmlFor: `${APPID}-redirect-shorts-toggle` }, 'Redirect Shorts player'),
@@ -928,6 +934,7 @@
 
             updateField(`#${APPID}-hide-shorts-toggle`, config.options.hideShorts, true);
             updateField(`#${APPID}-hide-more-topics-toggle`, config.options.hideMoreTopics, true);
+            updateField(`#${APPID}-hide-game-room-toggle`, config.options.hideGameRoom, true);
             updateField(`#${APPID}-redirect-shorts-toggle`, config.options.redirectShorts, true);
 
             this._setupEventListeners();
@@ -967,6 +974,9 @@
 
             const hideMore = this.element.querySelector(`#${APPID}-hide-more-topics-toggle`);
             if (hideMore) newConfig.options.hideMoreTopics = hideMore.checked;
+
+            const hideGameRoom = this.element.querySelector(`#${APPID}-hide-game-room-toggle`);
+            if (hideGameRoom) newConfig.options.hideGameRoom = hideGameRoom.checked;
 
             const redirect = this.element.querySelector(`#${APPID}-redirect-shorts-toggle`);
             if (redirect) newConfig.options.redirectShorts = redirect.checked;
@@ -1214,7 +1224,7 @@
         }
 
         static update(options) {
-            const { itemsPerRow, hideShorts, hideMoreTopics } = options;
+            const { itemsPerRow, hideShorts, hideMoreTopics, hideGameRoom } = options;
             const GAP = 12; // A reasonable default gap in pixels
 
             let cssText = `
@@ -1254,9 +1264,19 @@
                 `;
             }
 
+            if (hideGameRoom) {
+                const gameRoomSelectorsToHide = CONSTANTS.SELECTORS.gameRoom.join(',\n');
+                cssText += `
+                    /* CSS to hide Game Room section */
+                    ${gameRoomSelectorsToHide} {
+                        display: none !important;
+                    }
+                `;
+            }
+
             if (this.styleElement.textContent !== cssText) {
                 this.styleElement.textContent = cssText;
-                Logger.log(`Styles updated: ItemsPerRow=${itemsPerRow}, HideShorts=${hideShorts}, HideMoreTopics=${hideMoreTopics}`);
+                Logger.log(`Styles updated: ItemsPerRow=${itemsPerRow}, HideShorts=${hideShorts}, HideMoreTopics=${hideMoreTopics}, HideGameRoom=${hideGameRoom}`);
             }
         }
     }

@@ -1,5 +1,10 @@
 # Changelog
 
+## [1.3.1] - 2026-03-12
+- **New Features**
+  - Added a new feature to hide the recently introduced **Game Room (Playables)** section from the YouTube feed (enabled by default).
+  - A "Hide Game Room" toggle has been added to the settings panel to easily enable or disable this feature.
+
 ## [1.3.0] - 2025-12-07
 - **UI & Experience**
   - **New Settings Interface:** Replaced the floating on-screen button with a clean modal overlay. Settings are now accessed via the script manager's menu command (e.g., Tampermonkey menu).
