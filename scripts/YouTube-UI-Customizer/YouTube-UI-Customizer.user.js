@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         YouTube-UI-Customizer
 // @namespace    https://github.com/p65536
-// @version      1.3.1
+// @version      1.3.2
 // @license      MIT
 // @description  Customize your YouTube grid layout (thumbnails per row) and declutter your feed by hiding Shorts, Game Room, and 'Explore' sections. Includes an automatic Shorts-to-standard-player redirect.
 // @icon         https://www.youtube.com/favicon.ico
@@ -1229,8 +1229,8 @@
 
             let cssText = `
                 /* Widen the main content container and remove padding */
-                #primary.ytd-two-column-browse-results-renderer,
-                #contents.ytd-page-manager {
+                #primary.ytd-two-column-browse-results-renderer:has(ytd-rich-grid-renderer),
+                #contents.ytd-page-manager:has(ytd-rich-grid-renderer) {
                     width: 100% !important;
                     max-width: 100% !important;
                     padding: 0 !important;
