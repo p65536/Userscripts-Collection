@@ -1,5 +1,14 @@
 # Changelog
 
+## [2.4.0] - 2026-04-24
+- **New Features**
+  - Added a new `{tags}` placeholder for the filename template configuration. You can now automatically include video tags (e.g., `#tag1_#tag2`) in the names of your downloaded files.
+  - Updated the Settings menu to list `{tags}` as an available option and integrated tag examples into the real-time filename preview.
+  - Added robust error prevention to ensure the download process does not crash when attempting to download videos with no assigned tags.
+- **Improvements**
+  - Implemented an automatic filename truncation safety mechanism. Generated filenames are now safely limited in length to prevent OS-level file saving errors caused by excessively long tags or video data.
+  - Other internal code refactorings.
+
 ## [2.3.0] - 2026-01-16
 - **New Features**
   - **[Viewer]** Introduced a **Clean Viewer** mode that opens videos in a minimalist, distraction-free player tab instead of the full watch page.
