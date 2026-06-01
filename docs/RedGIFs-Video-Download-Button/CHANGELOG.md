@@ -1,5 +1,24 @@
 # Changelog
 
+## [2.5.0] - 2026-06-02
+- **New Features**
+  - Overhauled Clean Viewer UI with a polished vertical button layout.
+  - Integrated full-fidelity, animated toast popups natively into the separate tab viewer window.
+  - Added an integrated download button inside the minimalist video view.
+  - Added an Advanced Settings option to configure "Blob URL Revoke Time" (1, 3, 5, or 10 minutes), allowing users to prevent download failures in varying network or browser environments.
+  - Added automated promotional video card blocking for elements containing the `.gifNiches` block, preventing embedded marketing native items from polluting the feed.
+- **Bug Fixes**
+  - [Download] Fixed an issue where video downloads could occasionally fail or save as empty (0-byte) files due to premature memory cleanup on certain browsers.
+  - [Core] Hardened the internal event bus to properly catch and log unhandled errors from asynchronous tasks.
+  - [Sentinel] Fixed a bug where leftover CSS rules could leak during dynamic page updates.
+- **Core Changes & Optimizations**
+  - [Download] Streamlined the overall download processing for more consistent operations and reliable error notifications.
+  - [Annoyance] Optimized internal filtering mechanisms to handle overlapping advertisements and native promotions more efficiently.
+  - [UI Rendering] Improved interface layout scheduling to ensure fluid animations and smoother rendering updates.
+  - [Sentinel] Reduced background script overhead when processing animations, lowering the extension's overall browser performance impact.
+  - [UX] Enhanced interactive dynamic tooltips to better inform users of available actions during various download phases.
+  - [Config] Condensed legacy verbose configuration comments to minimal developer notes, reducing file size as manual script editing is no longer necessary.
+
 ## [2.4.0] - 2026-04-24
 - **New Features**
   - Added a new `{tags}` placeholder for the filename template configuration. You can now automatically include video tags (e.g., `#tag1_#tag2`) in the names of your downloaded files.

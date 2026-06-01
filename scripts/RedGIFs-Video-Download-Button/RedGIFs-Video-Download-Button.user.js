@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         RedGIFs Video Download Button
 // @namespace    https://github.com/p65536
-// @version      2.4.0
+// @version      2.5.0
 // @license      MIT
 // @description  Adds a download button (for one-click HD downloads) and an "Open in New Tab" button to each video on the RedGIFs site.
 // @icon         https://www.redgifs.com/favicon.ico
@@ -27,6 +27,41 @@
   const APPNAME = 'RedGIFs Video Download Button';
   const LOG_PREFIX = `[${APPID.toUpperCase()}]`;
 
+  // --- Temporal API Polyfill ---
+  // Lightweight fallback for outdated browsers that do not support the Temporal API yet.
+  const globalObj = typeof globalThis !== 'undefined' ? globalThis : window;
+  if (typeof globalObj.Temporal === 'undefined') {
+    /** @type {any} */ (globalObj).Temporal = {
+      Now: {
+        instant: () => ({
+          epochMilliseconds: Date.now(),
+        }),
+        timeZoneId: () => {
+          try {
+            return Intl.DateTimeFormat().resolvedOptions().timeZone;
+          } catch {
+            return 'UTC';
+          }
+        },
+      },
+      Instant: {
+        fromEpochMilliseconds: (ms) => ({
+          toZonedDateTimeISO: () => {
+            const d = new Date(ms);
+            return {
+              year: d.getFullYear(),
+              month: d.getMonth() + 1,
+              day: d.getDate(),
+              hour: d.getHours(),
+              minute: d.getMinutes(),
+              second: d.getSeconds(),
+            };
+          },
+        }),
+      },
+    };
+  }
+
   class HttpError extends Error {
     /**
      * @param {number} status
@@ -46,6 +81,7 @@
   const CONSTANTS = {
     CONFIG_KEY: `${APPID}_config`,
     VIDEO_CONTAINER_SELECTOR: '.GifPreview',
+    VISIBLE_VIDEO_CONTAINER_SELECTOR: '.GifPreview.VisibleOnly',
     TILE_ITEM_SELECTOR: '.tileItem',
     WATCH_URL_BASE: 'https://www.redgifs.com/watch/',
     TOAST_DURATION: 3000,
@@ -69,60 +105,24 @@
    * Contains the initial values and descriptions for user-configurable options.
    */
   const DEFAULT_CONFIG = {
-    /**
-     * General settings affecting all buttons/UI.
-     */
     common: {
-      /**
-       * If true, ALL buttons are hidden by default and only appear when hovering over the thumbnail/video.
-       * This applies globally to prevent layout misalignment.
-       * (On mobile, buttons are always visible regardless of this setting to prevent usability issues)
-       */
+      /** Show buttons only on hover (desktop). */
       showOnlyOnHover: false,
     },
-
-    /**
-     * Settings related to the Download functionality.
-     */
     download: {
-      /**
-       * Template for the filename of downloaded videos.
-       * You can customize the format using the following placeholders:
-       * - {user}: The creator's username (e.g., "RedGifsOfficial")
-       * - {date}: The creation date (YYYYMMDD_HHMMSS)
-       * - {id}:   The unique video ID (e.g., "watchfulwaiting")
-       * - {tags}: The video tags (e.g., "#Solo")
-       *
-       * Default: '{user}_{date}_{id}'
-       */
+      /** Filename template using placeholders ({user}, {date}, {id}, {tags}). */
       filenameTemplate: '{user}_{date}_{id}',
+      /** Time (in ms) to hold Blob URL in memory before revocation. */
+      blobRevokeTime: 60000,
     },
-
-    /**
-     * Settings related to the "Open in New Tab" functionality.
-     */
     openInNewTab: {
-      /**
-       * Set to false to completely remove this button.
-       * If disabled, the download button will automatically move up to take its place.
-       */
+      /** Enable "Open in New Tab" button. */
       enabled: true,
-      /**
-       * The type of viewer to open when clicking the "Open in New Tab" button.
-       * Options: 'default' (RedGIFs Watch Page), 'clean' (Video Player Only)
-       * Default: 'default'
-       */
+      /** Viewer type: 'default' or 'clean'. */
       viewerType: 'default',
     },
-
-    /**
-     * Developer settings for debugging.
-     */
     developer: {
-      /**
-       * Controls the verbosity of logs in the console.
-       * Options: 'error', 'warn', 'info', 'log', 'debug'
-       */
+      /** Console log level ('error', 'warn', 'info', 'log', 'debug'). */
       logger_level: 'log',
     },
   };
@@ -136,252 +136,310 @@
   // SECTION: Style Definitions
   // =================================================================================
   const UI_STYLES_TEMPLATE = `
-        /* Open in New Tab Button on Thumbnails */
-        ${CONSTANTS.TILE_ITEM_SELECTOR} {
-            position: relative;
-        }
-        .${APPID}-open-in-new-tab-btn {
-            position: absolute;
-            top: 8px;
-            right: 8px;
-            z-index: 10;
-            width: 28px;
-            height: 28px;
-            padding: 4px;
-            border-radius: 4px;
-            background-color: rgb(0 0 0 / 0.6);
-            border: none;
-            cursor: pointer;
-            display: flex;
-            align-items: center;
-            justify-content: center;
-            opacity: 1;
-            text-decoration: none; /* For <a> tag */
-            color: inherit; /* Prevent blue link color */
-        }
-        .${APPID}-open-in-new-tab-btn:hover {
-            background-color: rgb(0 0 0 / 0.8);
-        }
-        /* Download Button on Thumbnails */
-        .${APPID}-tile-download-btn {
-            position: absolute;
-            top: 40px; /* Positioned below the open-in-new-tab button (8px + 28px + 4px) */
-            right: 8px;
-            z-index: 10;
-            width: 28px;
-            height: 28px;
-            padding: 0;
-            border-radius: 4px;
-            background-color: red;
-            border: none;
-            cursor: pointer;
-            display: grid;
-            place-items: center;
-        }
-        .${APPID}-tile-download-btn:hover {
-            background-color: #c00;
-        }
+/* Open in New Tab Button on Thumbnails */
+${CONSTANTS.TILE_ITEM_SELECTOR} {
+position: relative;
+}
+.${APPID}-open-in-new-tab-btn {
+position: absolute;
+top: 8px;
+right: 8px;
+z-index: 10;
+width: 28px;
+height: 28px;
+padding: 4px;
+border-radius: 4px;
+background-color: rgb(0 0 0 / 0.6);
+border: none;
+cursor: pointer;
+display: flex;
+align-items: center;
+justify-content: center;
+opacity: 1;
+text-decoration: none; /* For <a> tag */
+color: inherit; /* Prevent blue link color */
+}
+.${APPID}-open-in-new-tab-btn:hover {
+background-color: rgb(0 0 0 / 0.8);
+}
+/* Download Button on Thumbnails */
+.${APPID}-tile-download-btn {
+position: absolute;
+top: 40px; /* Positioned below the open-in-new-tab button (8px + 28px + 4px) */
+right: 8px;
+z-index: 10;
+width: 28px;
+height: 28px;
+padding: 0;
+border-radius: 4px;
+background-color: red;
+border: none;
+cursor: pointer;
+display: grid;
+place-items: center;
+}
+.${APPID}-tile-download-btn:not(:disabled):hover {
+background-color: #c00;
+}
 
-        /* Buttons on Video Preview */
-        ${CONSTANTS.VIDEO_CONTAINER_SELECTOR} {
-            position: relative;
-        }
-        .${APPID}-preview-open-btn {
-            position: absolute;
-            top: 8px;
-            right: 8px;
-            z-index: 90;
-            width: 32px;
-            height: 32px;
-            padding: 4px;
-            border-radius: 4px;
-            background-color: rgb(0 0 0 / 0.6);
-            border: none;
-            cursor: pointer;
-            display: flex;
-            align-items: center;
-            justify-content: center;
-            text-decoration: none; /* For <a> tag */
-            color: inherit; /* Prevent blue link color */
-        }
-        .${APPID}-preview-open-btn:hover {
-            background-color: rgb(0 0 0 / 0.8);
-        }
-        .${APPID}-preview-download-btn {
-            position: absolute;
-            top: 44px; /* Positioned below the open-in-new-tab button */
-            right: 8px;
-            z-index: 90;
-            width: 32px;
-            height: 32px;
-            padding: 0;
-            border-radius: 4px;
-            background-color: red;
-            border: none;
-            cursor: pointer;
-            display: grid;
-            place-items: center;
-        }
-        .${APPID}-preview-download-btn:hover {
-            background-color: #c00;
-        }
+/* Buttons on Video Preview */
+${CONSTANTS.VIDEO_CONTAINER_SELECTOR} {
+position: relative;
+}
+.${APPID}-preview-open-btn {
+position: absolute;
+top: 8px;
+right: 8px;
+z-index: 90;
+width: 32px;
+height: 32px;
+padding: 4px;
+border-radius: 4px;
+background-color: rgb(0 0 0 / 0.6);
+border: none;
+cursor: pointer;
+display: flex;
+align-items: center;
+justify-content: center;
+text-decoration: none; /* For <a> tag */
+color: inherit; /* Prevent blue link color */
+}
+.${APPID}-preview-open-btn:hover {
+background-color: rgb(0 0 0 / 0.8);
+}
+.${APPID}-preview-download-btn {
+position: absolute;
+top: 44px; /* Positioned below the open-in-new-tab button */
+right: 8px;
+z-index: 90;
+width: 32px;
+height: 32px;
+padding: 0;
+border-radius: 4px;
+background-color: red;
+border: none;
+cursor: pointer;
+display: grid;
+place-items: center;
+}
+.${APPID}-preview-download-btn:not(:disabled):hover {
+background-color: #c00;
+}
 
-        /* Spinner Animation */
-        .${APPID}-spinner {
-            animation: ${APPID}-spinner-rotate 1s linear infinite;
-            transform-origin: center;
-        }
+/* Spinner Animation */
+.${APPID}-spinner {
+animation: ${APPID}-spinner-rotate 1s linear infinite;
+transform-origin: center;
+}
 
-        /* Toast Notifications */
-        .${APPID}-toast-container {
-            position: fixed;
-            top: 20px;
-            right: 20px;
-            z-index: 9999;
-            display: flex;
-            flex-direction: column;
-            gap: 10px;
-        }
-        .${APPID}-toast {
-            padding: 12px 18px;
-            border-radius: 6px;
-            color: white;
-            font-family: sans-serif;
-            font-size: 14px;
-            box-shadow: 0 4px 12px rgb(0 0 0 / 0.15);
-            animation: ${APPID}-toast-fade-in 0.3s ease-out;
-        }
-        .${APPID}-toast.exiting {
-            animation: ${APPID}-toast-fade-out 0.3s ease-in forwards;
-        }
-        .${APPID}-toast-success { background-color: rgb(40 167 69); }
-        .${APPID}-toast-error { background-color: rgb(220 53 69); }
-        .${APPID}-toast-info { background-color: rgb(23 162 184); }
+/* Toast Notifications */
+.${APPID}-toast-container {
+position: fixed;
+top: 20px;
+right: 20px;
+z-index: 9999;
+display: flex;
+flex-direction: column;
+gap: 10px;
+}
+.${APPID}-toast {
+padding: 12px 18px;
+border-radius: 6px;
+color: white;
+font-family: sans-serif;
+font-size: 14px;
+box-shadow: 0 4px 12px rgb(0 0 0 / 0.15);
+animation: ${APPID}-toast-fade-in 0.3s ease-out;
+}
+.${APPID}-toast.exiting {
+animation: ${APPID}-toast-fade-out 0.3s ease-in forwards;
+}
+.${APPID}-toast-success { background-color: rgb(40 167 69); }
+.${APPID}-toast-error { background-color: rgb(220 53 69); }
+.${APPID}-toast-info { background-color: rgb(23 162 184); }
 
-        /* Mobile: Adjust button position to avoid overlapping native UI */
-        .App.phone .${APPID}-preview-open-btn {
-            /* Offset by toolbar height (assumed 56px) + 8px original top */
-            top: 64px; 
-        }
-        .App.phone .${APPID}-preview-download-btn {
-            /* Offset by toolbar height (assumed 56px) + 44px original top */
-            top: 100px;
-        }
+/* Mobile: Adjust button position to avoid overlapping native UI */
+.App.phone .${APPID}-preview-open-btn {
+/* Offset by toolbar height (assumed 56px) + 8px original top */
+top: 64px; 
+}
+.App.phone .${APPID}-preview-download-btn {
+/* Offset by toolbar height (assumed 56px) + 44px original top */
+top: 100px;
+}
 
-        /* Hide buttons when the site menu is active */
-        body:has(.activeBurgerMenu) .${APPID}-preview-open-btn,
-        body:has(.activeBurgerMenu) .${APPID}-preview-download-btn {
-            display: none !important;
-        }
+/* Hide buttons when the site menu is active */
+body:has(.activeBurgerMenu) .${APPID}-preview-open-btn,
+body:has(.activeBurgerMenu) .${APPID}-preview-download-btn {
+display: none !important;
+}
 
-        /* Keyframes */
-        @keyframes ${APPID}-spinner-rotate {
-            from { transform: rotate(0deg); }
-            to { transform: rotate(360deg); }
-        }
-        @keyframes ${APPID}-toast-fade-in {
-            from { opacity: 0; transform: translateX(100%); }
-            to { opacity: 1; transform: translateX(0); }
-        }
-        @keyframes ${APPID}-toast-fade-out {
-            from { opacity: 1; transform: translateX(0); }
-            to { opacity: 0; transform: translateX(100%); }
-        }
-    `;
+/* Keyframes */
+@keyframes ${APPID}-spinner-rotate {
+from { transform: rotate(0deg); }
+to { transform: rotate(360deg); }
+}
+@keyframes ${APPID}-toast-fade-in {
+from { opacity: 0; transform: translateX(100%); }
+to { opacity: 1; transform: translateX(0); }
+}
+@keyframes ${APPID}-toast-fade-out {
+from { opacity: 1; transform: translateX(0); }
+to { opacity: 0; transform: translateX(100%); }
+}
+
+/* Global Download Button Disabled State */
+.${APPID}-tile-download-btn:disabled,
+.${APPID}-preview-download-btn:disabled,
+.clean-download-btn:disabled {
+opacity: 0.6;
+cursor: not-allowed;
+}
+`;
 
   // Dark theme styles specifically for the settings modal
   const MODAL_STYLES = `
-        .${APPID}-modal-overlay {
-            position: fixed; top: 0; left: 0; width: 100%; height: 100%;
-            background: rgb(0 0 0 / 0.7);
-            z-index: ${CONSTANTS.MODAL.Z_INDEX};
-            display: flex; align-items: center; justify-content: center;
-        }
-        .${APPID}-modal-box {
-            background: #222; color: #eee;
-            width: ${CONSTANTS.MODAL.WIDTH}px;
-            max-width: 90vw;
-            border: 1px solid #444;
-            border-radius: 8px;
-            box-shadow: 0 4px 16px rgb(0 0 0 / 0.5);
-            display: flex; flex-direction: column;
-            font-family: sans-serif; font-size: 14px;
-        }
-        .${APPID}-modal-header {
-            padding: 12px 16px;
-            font-size: 1.1em; font-weight: bold;
-            border-bottom: 1px solid #444;
-            display: flex; justify-content: space-between; align-items: center;
-        }
-        .${APPID}-modal-content {
-            padding: 16px;
-            overflow-y: auto;
-            max-height: 80vh;
-        }
-        .${APPID}-modal-footer {
-            padding: 12px 16px;
-            border-top: 1px solid #444;
-            display: flex; justify-content: space-between;
-            align-items: center;
-        }
-        .${APPID}-footer-actions {
-            display: flex; gap: 8px;
-        }
-        .${APPID}-form-group {
-            margin-bottom: 16px;
-        }
-        .${APPID}-form-label {
-            display: block; margin-bottom: 6px; font-weight: 500; color: #ccc;
-        }
-        .${APPID}-form-desc {
-            font-size: 0.85em; color: #999; margin-bottom: 6px;
-        }
-        .${APPID}-form-input {
-            width: 100%; padding: 6px 8px;
-            background: #333; border: 1px solid #555; border-radius: 4px;
-            color: #fff; box-sizing: border-box;
-        }
-        .${APPID}-form-input:focus {
-            border-color: #007bff; outline: none;
-        }
-        .${APPID}-checkbox-wrapper {
-            display: flex; align-items: center; gap: 8px;
-        }
-        .${APPID}-btn {
-            padding: 6px 16px; border-radius: 4px; border: none;
-            cursor: pointer; font-size: 14px; font-weight: 500;
-            transition: background 0.2s;
-        }
-        .${APPID}-btn-primary {
-            background: #007bff; color: white;
-        }
-        .${APPID}-btn-primary:hover { background: #0056b3; }
-        .${APPID}-btn-secondary {
-            background: #555; color: white;
-        }
-        .${APPID}-btn-secondary:hover { background: #444; }
+.${APPID}-modal-overlay {
+position: fixed; top: 0; left: 0; width: 100%; height: 100%;
+background: rgb(0 0 0 / 0.7);
+z-index: ${CONSTANTS.MODAL.Z_INDEX};
+display: flex; align-items: center; justify-content: center;
+}
+.${APPID}-modal-box {
+background: #222; color: #eee;
+width: ${CONSTANTS.MODAL.WIDTH}px;
+max-width: 90vw;
+border: 1px solid #444;
+border-radius: 8px;
+box-shadow: 0 4px 16px rgb(0 0 0 / 0.5);
+display: flex; flex-direction: column;
+font-family: sans-serif; font-size: 14px;
+}
+.${APPID}-modal-header {
+padding: 12px 16px;
+font-size: 1.1em; font-weight: bold;
+border-bottom: 1px solid #444;
+display: flex; justify-content: space-between; align-items: center;
+}
+.${APPID}-modal-content {
+padding: 16px;
+overflow-y: auto;
+max-height: 80vh;
+}
+.${APPID}-modal-footer {
+padding: 12px 16px;
+border-top: 1px solid #444;
+display: flex; justify-content: space-between;
+align-items: center;
+}
+.${APPID}-footer-actions {
+display: flex; gap: 8px;
+}
+.${APPID}-form-group {
+margin-bottom: 16px;
+}
+.${APPID}-form-label {
+display: block; margin-bottom: 6px; font-weight: 500; color: #ccc;
+}
+.${APPID}-form-desc {
+font-size: 0.85em; color: #999; margin-bottom: 6px;
+}
+.${APPID}-form-input {
+width: 100%; padding: 6px 8px;
+background: #333; border: 1px solid #555; border-radius: 4px;
+color: #fff; box-sizing: border-box;
+}
+.${APPID}-form-input:focus {
+border-color: #007bff; outline: none;
+}
+.${APPID}-checkbox-wrapper {
+display: flex; align-items: center; gap: 8px;
+}
+.${APPID}-btn {
+padding: 6px 16px; border-radius: 4px; border: none;
+cursor: pointer; font-size: 14px; font-weight: 500;
+transition: background 0.2s;
+}
+.${APPID}-btn-primary {
+background: #007bff; color: white;
+}
+.${APPID}-btn-primary:hover { background: #0056b3; }
+.${APPID}-btn-secondary {
+background: #555; color: white;
+}
+.${APPID}-btn-secondary:hover { background: #444; }
 
-        /* New Styles for Preview and Warning */
-        .${APPID}-input-preview-label {
-            display: block; font-size: 0.85em; color: #888; margin-top: 12px;
-        }
-        .${APPID}-input-preview-content {
-            display: block; font-size: 1.2em; color: #eee; margin-top: 4px; font-family: monospace; word-break: break-all;
-            transition: color 0.2s;
-        }
-        .${APPID}-preview-valid {
-            color: #4cd964 !important; /* Pastel Green for valid state */
-        }
-        .${APPID}-preview-error {
-            color: #ff6b6b !important; /* Soft Red for error (forbidden chars) */
-        }
-        .${APPID}-preview-fallback {
-            color: #ffb74d !important; /* Soft Orange for fallback state */
-        }
-        .${APPID}-text-warning {
-            display: none; font-size: 0.85em; color: #ffc107; margin-top: 4px;
-        }
-    `;
+/* New Styles for Preview and Warning */
+.${APPID}-input-preview-label {
+display: block; font-size: 0.85em; color: #888; margin-top: 12px;
+}
+.${APPID}-input-preview-content {
+display: block; font-size: 1.2em; color: #eee; margin-top: 4px; font-family: monospace; word-break: break-all;
+transition: color 0.2s;
+}
+.${APPID}-preview-valid {
+color: #4cd964 !important; /* Pastel Green for valid state */
+}
+.${APPID}-preview-error {
+color: #ff6b6b !important; /* Soft Red for error (forbidden chars) */
+}
+.${APPID}-preview-fallback {
+color: #ffb74d !important; /* Soft Orange for fallback state */
+}
+.${APPID}-text-warning {
+display: none; font-size: 0.85em; color: #ffc107; margin-top: 4px;
+}
+`;
+  // Minimalist styles for the clean video viewer
+  const CLEAN_VIEWER_STYLES = `
+video {
+max-width: 100%;
+max-height: 100%;
+outline: none;
+box-shadow: 0 0 20px rgb(0 0 0 / 0.5);
+}
+.clean-open-btn {
+position: absolute;
+top: 8px;
+right: 8px;
+z-index: 90;
+width: 32px;
+height: 32px;
+padding: 4px;
+border-radius: 4px;
+background-color: rgb(0 0 0 / 0.6);
+border: none;
+cursor: pointer;
+display: flex;
+align-items: center;
+justify-content: center;
+text-decoration: none;
+color: inherit;
+box-sizing: border-box;
+}
+.clean-open-btn:hover {
+background-color: rgb(0 0 0 / 0.8);
+}
+.clean-download-btn {
+position: absolute;
+top: 44px;
+right: 8px;
+z-index: 90;
+width: 32px;
+height: 32px;
+padding: 0;
+border-radius: 4px;
+background-color: red;
+border: none;
+cursor: pointer;
+display: grid;
+place-items: center;
+box-sizing: border-box;
+}
+.clean-download-btn:not(:disabled):hover {
+background-color: #c00;
+}
+`;
 
   // =================================================================================
   // SECTION: Icon Definitions
@@ -893,19 +951,21 @@
   }
 
   /**
-   * Formats a UNIX timestamp into a YYYYMMDD_HHMMSS string.
-   * @param {number} timestamp - The UNIX timestamp (in seconds).
-   * @returns {string} The formatted date string.
+   * @param {number | undefined} unixTimestamp
+   * @returns {string}
    */
-  function formatTimestamp(timestamp) {
-    const date = new Date(timestamp * 1000); // Convert seconds to milliseconds
-    const Y = date.getFullYear();
-    const M = String(date.getMonth() + 1).padStart(2, '0');
-    const D = String(date.getDate()).padStart(2, '0');
-    const h = String(date.getHours()).padStart(2, '0');
-    const m = String(date.getMinutes()).padStart(2, '0');
-    const s = String(date.getSeconds()).padStart(2, '0');
-    return `${Y}${M}${D}_${h}${m}${s}`;
+  function formatTimestamp(unixTimestamp) {
+    if (typeof unixTimestamp !== 'number' || isNaN(unixTimestamp)) {
+      return '';
+    }
+    const zonedDateTime = Temporal.Instant.fromEpochMilliseconds(Math.floor(unixTimestamp * 1000)).toZonedDateTimeISO(Temporal.Now.timeZoneId());
+    const yyyy = zonedDateTime.year;
+    const mm = String(zonedDateTime.month).padStart(2, '0');
+    const dd = String(zonedDateTime.day).padStart(2, '0');
+    const hh = String(zonedDateTime.hour).padStart(2, '0');
+    const ii = String(zonedDateTime.minute).padStart(2, '0');
+    const ss = String(zonedDateTime.second).padStart(2, '0');
+    return `${yyyy}${mm}${dd}_${hh}${ii}${ss}`;
   }
 
   /**
@@ -1036,7 +1096,7 @@
       }
       const onceListener = (...args) => {
         this.unsubscribe(event, key);
-        listener(...args);
+        return listener(...args);
       };
       this.subscribe(event, onceListener, key);
     },
@@ -1083,7 +1143,12 @@
           // Execute subscribers for the aggregated event, but without the verbose individual logs.
           [...this.events[event].values()].forEach((listener) => {
             try {
-              listener(...args);
+              const result = listener(...args);
+              if (result instanceof Promise) {
+                result.catch((e) => {
+                  Logger.error('', '', `EventBus async error in listener for event "${event}":`, e);
+                });
+              }
             } catch (e) {
               Logger.error('', '', `EventBus error in listener for event "${event}":`, e);
             }
@@ -1111,23 +1176,33 @@
         }
 
         // Iterate with keys for better logging
-        this.events[event].forEach((listener, key) => {
+        for (const [key, listener] of [...this.events[event].entries()]) {
           try {
             // Log which specific subscriber is being executed
-            Logger.debug('', '', `-> Executing: ${key}`);
-            listener(...args);
+            Logger.debug('', LOG_STYLES.PURPLE, `-> Executing: ${key}`);
+            const result = listener(...args);
+            if (result instanceof Promise) {
+              result.catch((e) => {
+                Logger.error('LISTENER ERROR', LOG_STYLES.RED, `Async listener "${key}" failed for event "${event}":`, e);
+              });
+            }
           } catch (e) {
             // Enhance error logging with the specific subscriber key
             Logger.error('LISTENER ERROR', LOG_STYLES.RED, `Listener "${key}" failed for event "${event}":`, e);
           }
-        });
+        }
 
         Logger.groupEnd();
       } else {
         // Iterate over a copy of the values in case a listener unsubscribes itself.
         [...this.events[event].values()].forEach((listener) => {
           try {
-            listener(...args);
+            const result = listener(...args);
+            if (result instanceof Promise) {
+              result.catch((e) => {
+                Logger.error('LISTENER ERROR', LOG_STYLES.RED, `Async listener failed for event "${event}":`, e);
+              });
+            }
           } catch (e) {
             Logger.error('LISTENER ERROR', LOG_STYLES.RED, `Listener failed for event "${event}":`, e);
           }
@@ -1159,12 +1234,23 @@
 
       for (const work of queueToProcess) {
         try {
-          work();
+          const result = work();
+          if (result instanceof Promise) {
+            result.catch((e) => {
+              Logger.error('UI QUEUE ERROR', LOG_STYLES.RED, 'Async error in queued UI work:', e);
+            });
+          }
         } catch (e) {
           Logger.error('UI QUEUE ERROR', LOG_STYLES.RED, 'Error in queued UI work:', e);
         }
       }
-      this.isUiWorkScheduled = false;
+
+      // Check if new work was added during processing (e.g., from trailing edge handlers)
+      if (this.uiWorkQueue.length > 0) {
+        requestAnimationFrame(this._processUIWorkQueue.bind(this));
+      } else {
+        this.isUiWorkScheduled = false;
+      }
     },
   };
 
@@ -1322,6 +1408,14 @@
         ]),
       ]);
 
+      // Blob URL Revoke Time Select
+      const blobRevokeTimeSelect = h(`select#${APPID}-input-blobrevoketime.${APPID}-form-input`, { style: { cursor: 'pointer' } }, [
+        h('option', { value: '60000', selected: config.download.blobRevokeTime === 60000 }, '1 Minute (Default)'),
+        h('option', { value: '180000', selected: config.download.blobRevokeTime === 180000 }, '3 Minutes'),
+        h('option', { value: '300000', selected: config.download.blobRevokeTime === 300000 }, '5 Minutes'),
+        h('option', { value: '600000', selected: config.download.blobRevokeTime === 600000 }, '10 Minutes'),
+      ]);
+
       this.overlay = h(
         `div.${APPID}-modal-overlay`,
         {
@@ -1368,6 +1462,7 @@
                   viewerTypeContainer,
                 ])
               ),
+              this._createFormGroup('Advanced Settings', 'Time to hold video data in memory. Increase this if downloads fail on slow connections.', blobRevokeTimeSelect),
             ]),
             // Footer
             h(`div.${APPID}-modal-footer`, [
@@ -1417,6 +1512,7 @@
       const hoverInput = document.getElementById(`${APPID}-input-hover`);
       const newTabInput = document.getElementById(`${APPID}-input-newtab`);
       const viewerTypeCleanInput = document.getElementById(`${APPID}-input-viewertype-clean`);
+      const blobRevokeTimeInput = document.getElementById(`${APPID}-input-blobrevoketime`);
 
       if (filenameInput instanceof HTMLInputElement) newConfig.download.filenameTemplate = filenameInput.value;
       if (hoverInput instanceof HTMLInputElement) newConfig.common.showOnlyOnHover = hoverInput.checked;
@@ -1425,6 +1521,11 @@
       // Radio button logic
       if (viewerTypeCleanInput instanceof HTMLInputElement) {
         newConfig.openInNewTab.viewerType = viewerTypeCleanInput.checked ? 'clean' : 'default';
+      }
+
+      // Blob Revoke Time logic
+      if (blobRevokeTimeInput instanceof HTMLSelectElement) {
+        newConfig.download.blobRevokeTime = parseInt(blobRevokeTimeInput.value, 10) || 60000;
       }
 
       await this.configManager.save(newConfig);
@@ -1528,6 +1629,12 @@
         } else {
           defaultRadio.checked = true;
         }
+      }
+
+      // Restore Blob Revoke Time Select
+      const blobRevokeTimeInput = document.getElementById(`${APPID}-input-blobrevoketime`);
+      if (blobRevokeTimeInput instanceof HTMLSelectElement) {
+        blobRevokeTimeInput.value = String(DEFAULT_CONFIG.download.blobRevokeTime);
       }
     }
 
@@ -1716,6 +1823,169 @@
   }
 
   // =================================================================================
+  // SECTION: Download Manager
+  // =================================================================================
+
+  class DownloadManager {
+    /**
+     * @param {ConfigManager} configManager
+     */
+    constructor(configManager) {
+      /** @type {ConfigManager} */
+      this.configManager = configManager;
+      /** @type {Map<string, AbortController>} */
+      this.activeDownloads = new Map();
+      /** @type {Set<string>} */
+      this.activeBlobUrls = new Set();
+    }
+
+    /**
+     * Handles the download process, managing states and notifications via callbacks.
+     * @param {string} videoId
+     * @param {object} videoInfo
+     * @param {object} callbacks
+     * @param {Function} callbacks.onStatusChange - Callback to update UI button state ('IDLE'|'LOADING_LOCKED'|'LOADING_CANCELLABLE'|'SUCCESS'|'ERROR')
+     * @param {Function} callbacks.onNotify - Callback to display toast notifications (message, type)
+     * @param {HTMLButtonElement} buttonElement
+     */
+    async startDownload(videoId, videoInfo, callbacks, buttonElement) {
+      const { onStatusChange, onNotify } = callbacks;
+
+      // 1. Cancellation Logic
+      if (this.activeDownloads.has(videoId)) {
+        if (buttonElement.disabled) return;
+
+        Logger.log('DOWNLOAD', LOG_STYLES.YELLOW, `Cancelling download for ${videoId}...`);
+        const controller = this.activeDownloads.get(videoId);
+        controller.abort();
+        onStatusChange('IDLE');
+        return;
+      }
+
+      const controller = new AbortController();
+      this.activeDownloads.set(videoId, controller);
+
+      onStatusChange('LOADING_LOCKED');
+      onNotify('Download started...', 'info');
+
+      setTimeout(() => {
+        if (this.activeDownloads.has(videoId)) {
+          onStatusChange('LOADING_CANCELLABLE');
+        }
+      }, CONSTANTS.CANCEL_LOCK_DURATION);
+
+      try {
+        if (videoInfo) {
+          Logger.log('CACHE HIT', LOG_STYLES.TEAL, `Starting download for ${videoId}`);
+          await this._executeDownload(videoInfo, videoId, controller.signal);
+
+          onStatusChange('SUCCESS');
+          onNotify('Download successful!', 'success');
+          Logger.log('DOWNLOAD', LOG_STYLES.GREEN, `Downloaded ${videoId} from:`, videoInfo.hdUrl);
+        } else {
+          Logger.warn('CACHE MISS', LOG_STYLES.YELLOW, `Video info not found in cache for ${videoId}.`);
+          onNotify('Video info not found in cache. (Try scrolling or refreshing)', 'error');
+          onStatusChange('ERROR');
+        }
+      } catch (error) {
+        if (error.name === 'AbortError') {
+          Logger.log('DOWNLOAD', LOG_STYLES.YELLOW, `Download process for ${videoId} was aborted.`);
+          onNotify('Download cancelled.', 'info');
+          if (this.activeDownloads.has(videoId)) {
+            onStatusChange('IDLE');
+          }
+        } else if (error instanceof HttpError && error.status === 404) {
+          Logger.warn('DOWNLOAD', LOG_STYLES.YELLOW, `Download failed: Not Found (404) for ${videoId}`, error);
+          onNotify('Video not found (404).', 'error');
+          onStatusChange('ERROR');
+        } else if (error instanceof HttpError && error.status === 403) {
+          Logger.warn('DOWNLOAD', LOG_STYLES.YELLOW, `Download failed: Forbidden (403) for ${videoId}`, error);
+          onNotify('Access forbidden (403).', 'error');
+          onStatusChange('ERROR');
+        } else {
+          Logger.error('DOWNLOAD', LOG_STYLES.RED, 'Download failed:', error);
+          onNotify('Download failed. (Network error or site update?)', 'error');
+          onStatusChange('ERROR');
+        }
+      } finally {
+        this.activeDownloads.delete(videoId);
+      }
+    }
+
+    /**
+     * Performs the actual download process (file save).
+     * @private
+     */
+    async _executeDownload(videoInfo, videoId, signal) {
+      const config = this.configManager.get();
+      const { hdUrl, userName, createDate, tags } = videoInfo;
+      const downloadUrl = hdUrl;
+
+      const dateString = createDate && typeof createDate === 'number' ? formatTimestamp(createDate) : '';
+      const tagsText = Array.isArray(tags) && tags.length > 0 ? '#' + tags.join('_#') : '';
+
+      const replacements = {
+        user: userName || '',
+        date: dateString,
+        id: videoId || '',
+        tags: tagsText,
+      };
+
+      const baseFilename = resolveFilename(config.download.filenameTemplate, replacements);
+      let extension = getExtension(hdUrl);
+
+      if (!extension) {
+        Logger.warn('DOWNLOAD', LOG_STYLES.YELLOW, `Could not determine extension from URL. Defaulting to '.mp4'. URL:`, hdUrl);
+        extension = '.mp4';
+      }
+
+      const filename = `${baseFilename}${extension}`;
+      await this._downloadFile(downloadUrl, filename, signal);
+    }
+
+    /**
+     * Initiates a download for the given URL using fetch and saves the file.
+     * @private
+     */
+    async _downloadFile(url, filename, signal) {
+      const config = this.configManager.get();
+      const response = await fetch(url, { signal });
+      if (!response.ok) {
+        throw new HttpError(response.status, `Server responded with ${response.status}`);
+      }
+
+      const videoBlob = await response.blob();
+      let objectUrl = null;
+      let link = null;
+      try {
+        objectUrl = URL.createObjectURL(videoBlob);
+        this.activeBlobUrls.add(objectUrl);
+        link = h('a', {
+          href: objectUrl,
+          download: filename,
+        });
+        if (link instanceof HTMLElement) {
+          document.body.appendChild(link);
+          link.click();
+        }
+      } finally {
+        if (link instanceof HTMLElement) {
+          link.remove();
+        }
+        if (objectUrl) {
+          const urlToRevoke = objectUrl;
+          setTimeout(() => {
+            if (this.activeBlobUrls.has(urlToRevoke)) {
+              URL.revokeObjectURL(urlToRevoke);
+              this.activeBlobUrls.delete(urlToRevoke);
+            }
+          }, config.download.blobRevokeTime);
+        }
+      }
+    }
+  }
+
+  // =================================================================================
   // SECTION: UI Manager
   // =================================================================================
 
@@ -1800,23 +2070,23 @@
       // Apply 'Show Only On Hover' logic
       if (config.common.showOnlyOnHover) {
         const createHoverStyle = (btnClass, parentSelector) => `
-                    /* Default state: Hidden and non-clickable */
-                    .${btnClass} {
-                        opacity: 0;
-                        pointer-events: none;
-                        transition: opacity 0.2s ease-in-out;
-                    }
-                    /* Hover state: Visible and clickable */
-                    ${parentSelector}:hover .${btnClass} {
-                        opacity: 1;
-                        pointer-events: auto;
-                    }
-                    /* Mobile: Always visible (force override) */
-                    .App.phone .${btnClass} {
-                        opacity: 1 !important;
-                        pointer-events: auto !important;
-                    }
-                `;
+/* Default state: Hidden and non-clickable */
+.${btnClass} {
+opacity: 0;
+pointer-events: none;
+transition: opacity 0.2s ease-in-out;
+}
+/* Hover state: Visible and clickable */
+${parentSelector}:hover .${btnClass} {
+opacity: 1;
+pointer-events: auto;
+}
+/* Mobile: Always visible (force override) */
+.App.phone .${btnClass} {
+opacity: 1 !important;
+pointer-events: auto !important;
+}
+`;
         // Apply to all 4 button types
         css += createHoverStyle(CLS.TILE_OPEN, CONSTANTS.TILE_ITEM_SELECTOR);
         css += createHoverStyle(CLS.PREVIEW_OPEN, CONSTANTS.VIDEO_CONTAINER_SELECTOR);
@@ -1827,16 +2097,16 @@
       // Layout Adjustments (if Open in New Tab is disabled)
       if (!config.openInNewTab.enabled) {
         css += `
-                    /* Move Download Button to top position */
-                    .${CLS.TILE_DOWNLOAD} { top: 8px !important; }
-                    .${CLS.PREVIEW_DOWNLOAD} { top: 8px !important; }
-                    
-                    /* Mobile adjustment for Preview */
-                    .App.phone .${CLS.PREVIEW_DOWNLOAD} { top: 64px !important; }
+/* Move Download Button to top position */
+.${CLS.TILE_DOWNLOAD} { top: 8px !important; }
+.${CLS.PREVIEW_DOWNLOAD} { top: 8px !important; }
 
-                    /* Hide existing buttons if they exist in DOM (for immediate update without reload) */
-                    .${CLS.TILE_OPEN}, .${CLS.PREVIEW_OPEN} { display: none !important; }
-                `;
+/* Mobile adjustment for Preview */
+.App.phone .${CLS.PREVIEW_DOWNLOAD} { top: 64px !important; }
+
+/* Hide existing buttons if they exist in DOM (for immediate update without reload) */
+.${CLS.TILE_OPEN}, .${CLS.PREVIEW_OPEN} { display: none !important; }
+`;
       }
 
       styleEl.textContent = css;
@@ -1959,16 +2229,17 @@
      */
     updateButtonState(button, state) {
       const stateMap = {
-        IDLE: { icon: 'DOWNLOAD', disabled: false },
-        LOADING_LOCKED: { icon: 'SPINNER', disabled: true }, // Cancel lock
-        LOADING_CANCELLABLE: { icon: 'SPINNER', disabled: false }, // Cancellable
-        SUCCESS: { icon: 'SUCCESS', disabled: true },
-        ERROR: { icon: 'ERROR', disabled: true },
+        IDLE: { icon: 'DOWNLOAD', disabled: false, title: 'Download HD Video' },
+        LOADING_LOCKED: { icon: 'SPINNER', disabled: true, title: 'Downloading... (Please wait)' }, // Cancel lock
+        LOADING_CANCELLABLE: { icon: 'SPINNER', disabled: false, title: 'Click to Cancel Download' }, // Cancellable
+        SUCCESS: { icon: 'SUCCESS', disabled: true, title: 'Download successful!' },
+        ERROR: { icon: 'ERROR', disabled: true, title: 'Download failed.' },
       };
 
-      const { icon, disabled } = stateMap[state] || stateMap.IDLE;
+      const { icon, disabled, title } = stateMap[state] || stateMap.IDLE;
       this._setButtonIcon(button, icon);
       button.disabled = disabled;
+      button.title = title;
 
       // Revert to IDLE state after a delay for success or error states.
       if (state === 'SUCCESS' || state === 'ERROR') {
@@ -2015,57 +2286,59 @@
   // =================================================================================
 
   class AnnoyanceManager {
-    /**
-     * @private
-     * @static
-     * @const {string}
-     */
+    // --- Ad & Annoyance Selectors ---
+    static LIVE_CAM_SELECTOR = '.StreamateCameraDispatcher'; // Live Cam streams (Streamate)
+    static AD_SELECTORS = [
+      '.metaInfo_isBoosted', // Boosted Ad Posts
+      '.gifNiches', // Promotional Videos containing niches block
+    ];
+
     static STYLES = `
-                /* --- RGVDB Annoyance Removal --- */
+/* --- RGVDB Annoyance Removal --- */
 
-                /* Header: Link button to external site (Desktop) */
-                .topNav .aTab {
-                    display: none !important;
-                }
+/* Header: Link button to external site (Desktop) */
+.topNav .aTab {
+display: none !important;
+}
 
-                /* Information Bar (Top Banner) */
-                .InformationBar {
-                    display: none !important;
-                }
+/* Information Bar (Top Banner) */
+.InformationBar {
+display: none !important;
+}
 
-                /* Ad Containers (:has() dependent) */
-                .sideBarItem:has(.liveAdButton) {
-                    display: none !important;
-                }
+/* Ad Containers (:has() dependent) */
+.sideBarItem:has(.liveAdButton) {
+display: none !important;
+}
 
-                /* Feed Injections (Trending Niches/Creators, Ads, etc.) */
-                .injection {
-                    display: none !important;
-                }
+/* Feed Injections (Trending Niches/Creators, Ads, etc.) */
+.injection {
+display: none !important;
+}
 
-                /* Feed Modules (Suggested/Trending Niches, Suggested/Trending Creators, Mobile OF Creators, Niche Explorer) */
-                /* Backward compatibility: Keep existing class-based selectors combined with new attribute-based selectors */
-                .FeedModule:has(.nicheListWidget.trendingNiches),
-                .FeedModule:has(.seeMoreBlock.suggestedCreators),
-                .FeedModule:has(.seeMoreBlock.trendingCreators),
-                .FeedModule:has(.OnlyFansCreatorsModule),
-                .FeedModule:has(.nicheExplorer),
-                .FeedModule[data-feed-module-type="trending-niches"],
-                .FeedModule[data-feed-module-type="suggested-niches"],
-                .FeedModule[data-feed-module-type="trending-creators"],
-                .FeedModule[data-feed-module-type="suggested-creators"],
-                .FeedModule[data-feed-module-type="only-fans"],
-                .FeedModule[data-feed-module-type="live-cam"],
-                .FeedModule[data-feed-module-type="boost"] {
-                    display: none !important;
-                }
+/* Feed Modules (Suggested/Trending Niches, Suggested/Trending Creators, Mobile OF Creators, Niche Explorer) */
+/* Backward compatibility: Keep existing class-based selectors combined with new attribute-based selectors */
+.FeedModule:has(.nicheListWidget.trendingNiches),
+.FeedModule:has(.seeMoreBlock.suggestedCreators),
+.FeedModule:has(.seeMoreBlock.trendingCreators),
+.FeedModule:has(.OnlyFansCreatorsModule),
+.FeedModule:has(.nicheExplorer),
+.FeedModule[data-feed-module-type="trending-niches"],
+.FeedModule[data-feed-module-type="suggested-niches"],
+.FeedModule[data-feed-module-type="trending-creators"],
+.FeedModule[data-feed-module-type="suggested-creators"],
+.FeedModule[data-feed-module-type="only-fans"],
+.FeedModule[data-feed-module-type="live-cam"],
+.FeedModule[data-feed-module-type="boost"] {
+display: none !important;
+}
 
-                /* Sidebar: OnlyFans Creators (Desktop) */
-                /* Use visibility:hidden to hide without affecting layout (prevents center feed shift) */
-                .OnlyFansCreatorsSidebar {
-                    visibility: hidden !important;
-                }
-            `;
+/* Sidebar: OnlyFans Creators (Desktop) */
+/* Use visibility:hidden to hide without affecting layout (prevents center feed shift) */
+.OnlyFansCreatorsSidebar {
+visibility: hidden !important;
+}
+`;
 
     /**
      * Injects the annoyance removal CSS into the document's head.
@@ -2082,7 +2355,7 @@
     removeElements(sentinel) {
       // Helper to hide ad containers (VisibleOnly elements often cause layout shifts or blank spaces)
       const adHider = (adElement) => {
-        const adContainer = adElement.closest('.GifPreview.VisibleOnly');
+        const adContainer = adElement.closest(CONSTANTS.VISIBLE_VIDEO_CONTAINER_SELECTOR);
         if (adContainer instanceof HTMLElement) {
           // Do NOT use .remove() as it breaks the site's virtual DOM state.
           // Use inline style to force hide.
@@ -2092,15 +2365,16 @@
 
       // --- Unified Annoyance Hiding ---
       // Handles Live Cam streams (Streamate) on both Desktop and Mobile.
-      // Selectors are updated to match current site structure (.StreamateCameraDispatcher).
-      sentinel.on('.StreamateCameraDispatcher', adHider);
+      sentinel.on(AnnoyanceManager.LIVE_CAM_SELECTOR, adHider);
 
-      // Handle Boosted Ad Posts
-      sentinel.on('.metaInfo_isBoosted', (infoElement) => {
-        const container = infoElement.closest('.GifPreview');
-        if (container instanceof HTMLElement) {
-          container.style.setProperty('display', 'none', 'important');
-        }
+      // Handle Ad and Promotional Videos
+      AnnoyanceManager.AD_SELECTORS.forEach((selector) => {
+        sentinel.on(selector, (element) => {
+          const container = element.closest(CONSTANTS.VIDEO_CONTAINER_SELECTOR);
+          if (container instanceof HTMLElement) {
+            container.style.setProperty('display', 'none', 'important');
+          }
+        });
       });
     }
   }
@@ -2112,14 +2386,18 @@
   /**
    * @class Sentinel
    * @description Detects DOM node insertion using a shared, prefixed CSS animation trick.
+   * Designed as a persistent singleton per project prefix.
+   * This class does not support explicit lifecycle destruction (no destroy method), as instances are intended to live indefinitely to ensure continuous DOM monitoring across scripts.
    * @property {Map<string, Set<(element: Element) => void>>} listeners
    * @property {Set<string>} rules
    * @property {HTMLElement | null} styleElement
    * @property {CSSStyleSheet | null} sheet
-   * @property {string[]} pendingRules
    * @property {WeakMap<CSSRule, string>} ruleSelectors
    */
   class Sentinel {
+    static MAX_POLLS = 60;
+    static POLL_INTERVAL = 50;
+
     /**
      * @param {string} prefix - A unique identifier for this Sentinel instance to avoid CSS conflicts. Required.
      */
@@ -2144,9 +2422,7 @@
       }
 
       this.prefix = prefix;
-      this.isDestroyed = false;
       this.isSuspended = false;
-      this._initObserver = null;
 
       // Use a unique, prefixed animation name shared by all scripts in a project.
       this.animationName = `${prefix}-global-sentinel-animation`;
@@ -2155,9 +2431,10 @@
       this.rules = new Set(); // Tracks all active selectors
       this.styleElement = null; // Holds the reference to the single style element
       this.sheet = null; // Cache the CSSStyleSheet reference
-      this.pendingRules = []; // Queue for rules requested before sheet is ready
       /** @type {WeakMap<CSSRule, string>} */
       this.ruleSelectors = new WeakMap(); // Tracks selector strings associated with CSSRule objects
+      /** @type {Map<string, string>} */
+      this.normalizedSelectors = new Map(); // Maps original selectors to browser-normalized selectors
 
       this._boundHandleAnimationStart = this._handleAnimationStart.bind(this);
 
@@ -2167,61 +2444,20 @@
       globalScope.__global_sentinel_instances__[prefix] = this;
     }
 
-    destroy() {
-      if (this.isDestroyed) return;
-      this.isDestroyed = true;
-
-      document.removeEventListener('animationstart', this._boundHandleAnimationStart, true);
-
-      if (this._initObserver) {
-        this._initObserver.disconnect();
-        this._initObserver = null;
-      }
-
-      if (this.styleElement) {
-        this.styleElement.remove();
-        this.styleElement = null;
-      }
-
-      this.sheet = null;
-      this.listeners.clear();
-      this.rules.clear();
-      this.pendingRules = [];
-
-      /** @type {Window & { __global_sentinel_instances__?: Record<string, Sentinel> }} */
-      const globalScope = window;
-      if (globalScope.__global_sentinel_instances__) {
-        delete globalScope.__global_sentinel_instances__[this.prefix];
-      }
-    }
-
     _injectStyleElement() {
       // Ensure the style element is injected only once per project prefix.
       this.styleElement = document.getElementById(this.styleId);
 
       if (this.styleElement instanceof HTMLStyleElement) {
         this.styleElement.disabled = this.isSuspended;
-
-        /** @type {HTMLStyleElement} */
-        const styleNode = this.styleElement;
-        const pollExisting = () => {
-          if (this.isDestroyed) return;
-          if (styleNode.sheet) {
-            this.sheet = styleNode.sheet;
-            this._flushPendingRules();
-          } else {
-            // Poll infinitely until sheet is ready
-            setTimeout(pollExisting, 50);
-          }
-        };
-        pollExisting();
+        this._waitForStylesheet();
         return;
       }
 
       // Create empty style element
-      this.styleElement = h('style', {
-        id: this.styleId,
-      });
+      this.styleElement = document.createElement('style');
+      this.styleElement.id = this.styleId;
+
       // CSP Fix: Try to fetch a valid nonce from existing scripts/styles
       // "nonce" property exists on HTMLScriptElement/HTMLStyleElement, not basic Element.
       let nonce;
@@ -2259,44 +2495,20 @@
       // If the document is not yet ready (e.g. extremely early document-start), wait for the root element.
       const target = document.head || document.documentElement;
 
-      const initSheet = () => {
-        if (this.isDestroyed) return;
-        if (this.styleElement instanceof HTMLStyleElement) {
-          /** @type {HTMLStyleElement} */
-          const styleNode = this.styleElement;
-          if (styleNode.sheet) {
-            this.sheet = styleNode.sheet;
-            // Insert the shared keyframes rule at index 0.
-            try {
-              const keyframes = `@keyframes ${this.animationName} { from { outline: 1px solid transparent;} to { outline: 0px solid transparent; } }`;
-              this.sheet.insertRule(keyframes, 0);
-            } catch (e) {
-              Logger.error('SENTINEL', LOG_STYLES.RED, 'Failed to insert keyframes rule:', e);
-            }
-            this._flushPendingRules();
-          } else {
-            // Poll infinitely until sheet is ready
-            setTimeout(initSheet, 50);
-          }
-        }
-      };
-
       if (target) {
         target.appendChild(this.styleElement);
-        initSheet();
+        this._waitForStylesheet();
       } else {
-        this._initObserver = new MutationObserver(() => {
-          if (this.isDestroyed) return;
+        const initObserver = new MutationObserver(() => {
           const retryTarget = document.head || document.documentElement;
           if (retryTarget) {
-            this._initObserver.disconnect();
-            this._initObserver = null;
+            initObserver.disconnect();
 
             retryTarget.appendChild(this.styleElement);
-            initSheet();
+            this._waitForStylesheet();
           }
         });
-        this._initObserver.observe(document, { childList: true });
+        initObserver.observe(document, { childList: true });
       }
     }
 
@@ -2304,47 +2516,118 @@
      * Ensures the style element is connected to the DOM and restores rules if it was removed.
      */
     _ensureStyleGuard() {
+      // Lazy Recovery: If the style element is connected but the stylesheet reference (this.sheet) was missed due to a timeout caused by a long task, recover it immediately here.
+      if (this.styleElement instanceof HTMLStyleElement && this.styleElement.isConnected && !this.sheet && this.styleElement.sheet) {
+        this._syncStylesheetRules();
+      }
+
       if (this.styleElement && !this.styleElement.isConnected) {
         const target = document.head || document.documentElement;
         if (target) {
+          this.sheet = null; // Clear stale stylesheet reference before reconnecting
           target.appendChild(this.styleElement);
-          if (this.styleElement instanceof HTMLStyleElement && this.styleElement.sheet) {
-            this.styleElement.disabled = this.isSuspended;
-            this.sheet = this.styleElement.sheet;
-
-            try {
-              while (this.sheet.cssRules.length > 0) {
-                this.sheet.deleteRule(0);
-              }
-              const keyframes = `@keyframes ${this.animationName} { from { outline: 1px solid transparent; } to { outline: 0px solid transparent; } }`;
-              this.sheet.insertRule(keyframes, 0);
-            } catch (e) {
-              Logger.error('SENTINEL', LOG_STYLES.RED, 'Failed to clear or restore base rules:', e);
-            }
-
-            this.pendingRules = [];
-
-            this.rules.forEach((selector) => {
-              this._insertRule(selector);
-            });
-          }
+          this._waitForStylesheet();
         }
       }
     }
 
-    _flushPendingRules() {
-      if (!this.sheet || this.pendingRules.length === 0) return;
-      const rulesToInsert = [...this.pendingRules];
-      this.pendingRules = [];
+    /**
+     * Periodically checks for stylesheet availability and triggers full synchronization.
+     * @private
+     */
+    _waitForStylesheet() {
+      if (!(this.styleElement instanceof HTMLStyleElement) || !this.styleElement.isConnected) return;
 
-      rulesToInsert.forEach((selector) => {
-        this._insertRule(selector);
+      const styleNode = this.styleElement;
+      let pollCount = 0;
+
+      const poll = () => {
+        if (!styleNode.isConnected) return;
+        if (styleNode.sheet) {
+          this._syncStylesheetRules();
+        } else if (pollCount < Sentinel.MAX_POLLS) {
+          pollCount++;
+          console.debug(`[Sentinel] Polling sheet (Attempt ${pollCount}/${Sentinel.MAX_POLLS}). requestAnimationFrame check was insufficient.`);
+          setTimeout(poll, Sentinel.POLL_INTERVAL);
+        } else {
+          // Calculate timeout in seconds dynamically based on constants
+          const timeoutSeconds = (Sentinel.MAX_POLLS * Sentinel.POLL_INTERVAL) / 1000;
+          console.error(`[Sentinel] Polling sheet timed out after ${timeoutSeconds} seconds.`);
+        }
+      };
+
+      if (styleNode.sheet) {
+        this._syncStylesheetRules();
+      } else {
+        requestAnimationFrame(() => {
+          if (!styleNode.isConnected) return;
+          if (styleNode.sheet) {
+            this._syncStylesheetRules();
+          } else {
+            setTimeout(poll, Sentinel.POLL_INTERVAL);
+          }
+        });
+      }
+    }
+
+    /**
+     * Synchronizes all active rules directly onto the connected stylesheet.
+     * @private
+     */
+    _syncStylesheetRules() {
+      if (!(this.styleElement instanceof HTMLStyleElement) || !this.styleElement.isConnected || !this.styleElement.sheet) return;
+
+      this.styleElement.disabled = this.isSuspended;
+      this.sheet = this.styleElement.sheet;
+
+      try {
+        // Non-destructive cleanup: scan and remove only rules belonging to this instance's active selectors
+        for (let i = this.sheet.cssRules.length - 1; i >= 0; i--) {
+          const rule = this.sheet.cssRules[i];
+          const recordedSelector = this.ruleSelectors.get(rule);
+          if (this.rules.has(recordedSelector) || (rule instanceof CSSStyleRule && (this.rules.has(rule.selectorText) || [...this.rules].some((sel) => rule.selectorText === this.normalizedSelectors.get(sel))))) {
+            this.sheet.deleteRule(i);
+          }
+        }
+
+        // Non-destructive keyframes validation
+        this._ensureKeyframesRule();
+      } catch (e) {
+        console.error('[Sentinel] Failed to clear or restore base rules:', e);
+      }
+
+      this.rules.forEach((selector) => {
+        const success = this._insertRule(selector);
+        if (!success) {
+          // Rollback invalid selector to prevent infinite error loops on subsequent syncs
+          this.rules.delete(selector);
+          this.listeners.delete(selector);
+        }
       });
+    }
+
+    /**
+     * Ensures the shared keyframes rule exists in the stylesheet.
+     */
+    _ensureKeyframesRule() {
+      let hasKeyframes = false;
+      for (let i = 0; i < this.sheet.cssRules.length; i++) {
+        const rule = this.sheet.cssRules[i];
+        if (rule instanceof CSSKeyframesRule && rule.name === this.animationName) {
+          hasKeyframes = true;
+          break;
+        }
+      }
+      if (!hasKeyframes) {
+        const keyframes = `@keyframes ${this.animationName} { from { outline: 1px solid transparent; } to { outline: 0px solid transparent; } }`;
+        this.sheet.insertRule(keyframes, 0);
+      }
     }
 
     /**
      * Helper to insert a single rule into the stylesheet
      * @param {string} selector
+     * @returns {boolean} True if insertion was successful, false otherwise
      */
     _insertRule(selector) {
       try {
@@ -2356,14 +2639,19 @@
         const insertedRule = this.sheet.cssRules[index];
         if (insertedRule) {
           this.ruleSelectors.set(insertedRule, selector);
+          if (insertedRule instanceof CSSStyleRule) {
+            this.normalizedSelectors.set(selector, insertedRule.selectorText);
+          }
         }
+        return true;
       } catch (e) {
-        Logger.error('SENTINEL', LOG_STYLES.RED, `Failed to insert rule for selector "${selector}":`, e);
+        console.error(`[Sentinel] Rule insertion failed for selector "${selector}". The listener has been rejected and removed:`, e);
+        return false;
       }
     }
 
     _handleAnimationStart(event) {
-      if (this.isDestroyed) return;
+      if (this.isSuspended) return;
 
       // Check if the animation is the one we're listening for.
       if (event.animationName !== this.animationName) return;
@@ -2381,7 +2669,7 @@
             try {
               cb(target);
             } catch (e) {
-              Logger.error('SENTINEL', LOG_STYLES.RED, `Listener error for selector "${selector}":`, e);
+              console.error(`[Sentinel] Listener error for selector "${selector}":`, e);
             }
           });
         }
@@ -2393,7 +2681,6 @@
      * @param {(element: Element) => void} callback
      */
     on(selector, callback) {
-      if (this.isDestroyed) return;
       this._ensureStyleGuard();
 
       // Add callback to listeners
@@ -2408,9 +2695,12 @@
 
       // Apply rule
       if (this.sheet) {
-        this._insertRule(selector);
-      } else {
-        this.pendingRules.push(selector);
+        const success = this._insertRule(selector);
+        if (!success) {
+          // Rollback on immediate insertion failure
+          this.listeners.delete(selector);
+          this.rules.delete(selector);
+        }
       }
     }
 
@@ -2419,7 +2709,6 @@
      * @param {(element: Element) => void} callback
      */
     off(selector, callback) {
-      if (this.isDestroyed) return;
       const callbacks = this.listeners.get(selector);
       if (!callbacks) return;
 
@@ -2433,6 +2722,7 @@
         // Remove listener and rule
         this.listeners.delete(selector);
         this.rules.delete(selector);
+        this.normalizedSelectors.delete(selector);
 
         if (this.sheet) {
           // Iterate backwards to avoid index shifting issues during deletion
@@ -2440,11 +2730,11 @@
             const rule = this.sheet.cssRules[i];
             // Check for recorded selector via WeakMap or fallback to selectorText match
             const recordedSelector = this.ruleSelectors.get(rule);
-            if (recordedSelector === selector || (rule instanceof CSSStyleRule && rule.selectorText === selector)) {
+            if (recordedSelector === selector || (rule instanceof CSSStyleRule && (rule.selectorText === selector || rule.selectorText === this.normalizedSelectors.get(selector)))) {
               try {
                 this.sheet.deleteRule(i);
               } catch (e) {
-                Logger.error('SENTINEL', LOG_STYLES.RED, `Failed to delete rule for selector "${selector}":`, e);
+                console.error(`[Sentinel] Failed to delete rule for selector "${selector}":`, e);
               }
               // We assume one rule per selector, so we can break after deletion
               break;
@@ -2455,21 +2745,21 @@
     }
 
     suspend() {
-      if (this.isDestroyed) return;
+      if (this.isSuspended) return;
       this.isSuspended = true;
       if (this.styleElement instanceof HTMLStyleElement) {
         this.styleElement.disabled = true;
       }
-      Logger.debug('SENTINEL', LOG_STYLES.CYAN, 'Suspended.');
+      console.debug('[Sentinel] Suspended.');
     }
 
     resume() {
-      if (this.isDestroyed) return;
+      if (!this.isSuspended) return;
       this.isSuspended = false;
       if (this.styleElement instanceof HTMLStyleElement) {
         this.styleElement.disabled = false;
       }
-      Logger.debug('SENTINEL', LOG_STYLES.CYAN, 'Resumed.');
+      console.debug('[Sentinel] Resumed.');
     }
   }
 
@@ -2493,8 +2783,8 @@
       this.ui = new UIManager(this.configManager); // Pass configManager to UIManager
       /** @type {AnnoyanceManager} */
       this.annoyanceManager = new AnnoyanceManager();
-      /** @type {Map<string, AbortController>} */
-      this.activeDownloads = new Map();
+      /** @type {DownloadManager} */
+      this.downloadManager = new DownloadManager(this.configManager);
       /** @type {SettingsModal|null} */
       this.settingsModal = null;
 
@@ -2692,175 +2982,17 @@
       const button = e.currentTarget;
       if (!(button instanceof HTMLButtonElement)) return; // Type Guard
 
-      // --- 1. Cancellation Logic ---
-      // Check if this videoId is already being downloaded
-      if (this.activeDownloads.has(videoId)) {
-        // If the button is disabled, it's in the 1s lock, ignore the click
-        if (button.disabled) return;
+      const videoInfo = this.apiManager.getCachedVideoInfo(videoId);
 
-        // Button is enabled (LOADING_CANCELLABLE), proceed with cancellation
-        Logger.log('DOWNLOAD', LOG_STYLES.YELLOW, `Cancelling download for ${videoId}...`);
-        const controller = this.activeDownloads.get(videoId);
-        controller.abort(); // Trigger the abort signal
-
-        // No need to delete from map here, the finally block in the original call will handle it.
-        // No toast here for cancellation click, only log. Toast is shown if the fetch promise rejects with AbortError.
-        this.ui.updateButtonState(button, 'IDLE'); // Reset button immediately
-        return;
-      }
-
-      // --- 2. Download Start Logic ---
-      if (button.disabled) return; // Should not happen if state is IDLE, but as a safeguard.
-
-      const controller = new AbortController();
-      this.activeDownloads.set(videoId, controller);
-
-      // Set state to LOADING_LOCKED (Spinner, disabled: true)
-      this.ui.updateButtonState(button, 'LOADING_LOCKED');
-      this.ui.showToast('Download started...', 'info');
-
-      // Transition to cancellable state
-      setTimeout(() => {
-        // Only transition if the download is still active
-        if (this.activeDownloads.has(videoId)) {
-          this.ui.updateButtonState(button, 'LOADING_CANCELLABLE');
-        }
-      }, CONSTANTS.CANCEL_LOCK_DURATION);
-
-      try {
-        // --- 2a. Check Cache ---
-        const videoInfo = this.apiManager.getCachedVideoInfo(videoId);
-
-        if (videoInfo) {
-          // --- 2b. [Cache Hit] Execute Download ---
-          Logger.log('CACHE HIT', LOG_STYLES.TEAL, `Starting download for ${videoId}`);
-          await this._executeDownload(videoInfo, videoId, controller.signal);
-
-          // --- 2c. Handle Success ---
-          this.ui.updateButtonState(button, 'SUCCESS');
-          this.ui.showToast('Download successful!', 'success');
-          Logger.log('DOWNLOAD', LOG_STYLES.GREEN, `Downloaded ${videoId} from:`, videoInfo.hdUrl);
-        } else {
-          // --- 2d. [Cache Miss] Handle Failure ---
-          Logger.warn('CACHE MISS', LOG_STYLES.YELLOW, `Video info not found in cache for ${videoId}.`);
-          this.ui.showToast('Video info not found in cache. (Try scrolling or refreshing)', 'error');
-          this.ui.updateButtonState(button, 'ERROR');
-        }
-      } catch (error) {
-        // --- 2e. Handle Errors (including AbortError) ---
-        if (error.name === 'AbortError') {
-          // Handle cancellation specifically (when the promise rejects)
-          Logger.log('DOWNLOAD', LOG_STYLES.YELLOW, `Download process for ${videoId} was aborted.`);
-          this.ui.showToast('Download cancelled.', 'info');
-          // Button state should be reset by the click handler that initiated the abort
-          // If the abort happened for other reasons (e.g., page navigation), this ensures cleanup
-          if (this.activeDownloads.has(videoId)) {
-            // Check if cleanup is needed
-            this.ui.updateButtonState(button, 'IDLE');
-          }
-        } else if (error instanceof HttpError && error.status === 404) {
-          Logger.warn('DOWNLOAD', LOG_STYLES.YELLOW, `Download failed: Not Found (404) for ${videoId}`, error);
-          this.ui.showToast('Video not found (404).', 'error');
-          this.ui.updateButtonState(button, 'ERROR');
-        } else if (error instanceof HttpError && error.status === 403) {
-          Logger.warn('DOWNLOAD', LOG_STYLES.YELLOW, `Download failed: Forbidden (403) for ${videoId}`, error);
-          this.ui.showToast('Access forbidden (403).', 'error');
-          this.ui.updateButtonState(button, 'ERROR');
-        } else {
-          // Handle all other errors (API, Download, Network, 5xx, etc.) uniformly
-          Logger.error('DOWNLOAD', LOG_STYLES.RED, 'Download failed:', error); // Keep existing detailed log for developer
-
-          const userErrorMessage = 'Download failed. (Network error or site update?)';
-
-          this.ui.showToast(userErrorMessage, 'error'); // Show unified message to user
-          this.ui.updateButtonState(button, 'ERROR'); // Update button state
-        }
-      } finally {
-        // --- 3. Cleanup ---
-        // Always remove the task from the map when the process finishes (success, error, or abort)
-        this.activeDownloads.delete(videoId);
-      }
-    }
-
-    /**
-     * Performs the actual download process (file save).
-     * @param {{hdUrl: string, userName: string|undefined, createDate: number|undefined, tags: string[]|undefined}} videoInfo - The video info object from the cache.
-     * @param {string} videoId - The ID of the video to download (for filename).
-     * @param {AbortSignal} signal - The AbortSignal to cancel the fetch operations.
-     * @returns {Promise<void>}
-     * @private
-     */
-    async _executeDownload(videoInfo, videoId, signal) {
-      const config = this.configManager.get();
-      // --- A. Get Video Info ---
-      const { hdUrl, userName, createDate, tags } = videoInfo;
-      const downloadUrl = hdUrl;
-
-      // --- B. Resolve Filename ---
-      const dateString = createDate && typeof createDate === 'number' ? formatTimestamp(createDate) : '';
-      const tagsText = Array.isArray(tags) && tags.length > 0 ? '#' + tags.join('_#') : '';
-
-      const replacements = {
-        user: userName || '',
-        date: dateString,
-        id: videoId || '',
-        tags: tagsText,
-      };
-
-      const baseFilename = resolveFilename(config.download.filenameTemplate, replacements);
-
-      // --- Dynamic Extension ---
-      let extension = getExtension(hdUrl);
-
-      if (!extension) {
-        Logger.warn('DOWNLOAD', LOG_STYLES.YELLOW, `Could not determine extension from URL. Defaulting to '.mp4'. URL:`, hdUrl);
-        extension = '.mp4'; // Fallback to ".mp4" if extraction fails
-      }
-
-      // The _downloadFile method will sanitize this filename further if needed.
-      const filename = `${baseFilename}${extension}`;
-
-      // --- C. Download File ---
-      await this._downloadFile(downloadUrl, filename, signal);
-    }
-
-    /**
-     * Initiates a download for the given URL using fetch and saves the file.
-     * @param {string} url The URL of the video to download.
-     * @param {string} filename The desired filename for the downloaded video.
-     * @param {AbortSignal} [signal] - An optional AbortSignal to cancel the request.
-     * @returns {Promise<void>}
-     * @private
-     */
-    async _downloadFile(url, filename, signal) {
-      const response = await fetch(url, { signal }); // Pass signal to fetch
-      // Throw a more user-friendly error message for HTTP errors.
-      if (!response.ok) {
-        // Use HttpError for status code handling
-        throw new HttpError(response.status, `Server responded with ${response.status}`);
-      }
-
-      const videoBlob = await response.blob();
-      let objectUrl = null;
-      let link = null;
-      try {
-        objectUrl = URL.createObjectURL(videoBlob);
-        link = h('a', {
-          href: objectUrl,
-          download: filename,
-        });
-        if (link instanceof HTMLElement) {
-          document.body.appendChild(link);
-          link.click();
-        }
-      } finally {
-        if (link instanceof HTMLElement) {
-          document.body.removeChild(link);
-        }
-        if (objectUrl) {
-          URL.revokeObjectURL(objectUrl);
-        }
-      }
+      await this.downloadManager.startDownload(
+        videoId,
+        videoInfo,
+        {
+          onStatusChange: (state) => this.ui.updateButtonState(button, state),
+          onNotify: (message, type) => this.ui.showToast(message, type),
+        },
+        button
+      );
     }
 
     /**
@@ -2921,34 +3053,9 @@
         fontFamily: '-apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Helvetica, Arial, sans-serif',
       });
 
-      // Create styles for Back Link and Video
+      // Create styles for Buttons and Video
       const styleEl = doc.createElement('style');
-      styleEl.textContent = `
-                video {
-                    max-width: 100%;
-                    max-height: 100%;
-                    outline: none;
-                    box-shadow: 0 0 20px rgb(0 0 0 / 0.5);
-                }
-                .back-link {
-                    position: absolute;
-                    top: 16px;
-                    right: 16px;
-                    color: rgb(255 255 255 / 0.5);
-                    text-decoration: none;
-                    background: rgb(0 0 0 / 0.5);
-                    padding: 8px 12px;
-                    border-radius: 4px;
-                    font-size: 14px;
-                    backdrop-filter: blur(4px);
-                    transition: color 0.2s, background 0.2s;
-                    z-index: 9999;
-                }
-                .back-link:hover {
-                    color: #fff;
-                    background: rgb(0 0 0 / 0.8);
-                }
-            `;
+      styleEl.textContent = UI_STYLES_TEMPLATE + CLEAN_VIEWER_STYLES;
       doc.head.appendChild(styleEl);
 
       // Create Video Element
@@ -2961,14 +3068,68 @@
       videoEl.playsInline = true;
       doc.body.appendChild(videoEl);
 
-      // Create Back Link Element
-      const linkEl = doc.createElement('a');
-      linkEl.href = watchUrl;
-      linkEl.className = 'back-link';
-      linkEl.target = '_blank';
-      linkEl.rel = 'noopener noreferrer';
-      linkEl.textContent = 'Open Original Page';
-      doc.body.appendChild(linkEl);
+      // Create Toast Container for Child Window
+      const toastContainer = doc.createElement('div');
+      toastContainer.className = `${APPID}-toast-container`;
+      doc.body.appendChild(toastContainer);
+
+      /**
+       * Displays a toast notification inside the child window.
+       * @param {string} message
+       * @param {'info'|'success'|'error'} type
+       */
+      const showCleanToast = (message, type) => {
+        const toastClass = `${APPID}-toast-${type}`;
+        const toastElement = doc.createElement('div');
+        toastElement.className = `${APPID}-toast ${toastClass}`;
+        toastElement.textContent = message;
+        toastContainer.appendChild(toastElement);
+
+        const duration = type === 'error' ? CONSTANTS.TOAST_ERROR_DURATION : CONSTANTS.TOAST_DURATION;
+
+        setTimeout(() => {
+          toastElement.classList.add('exiting');
+          setTimeout(() => {
+            toastElement.remove();
+          }, CONSTANTS.TOAST_FADE_OUT_DURATION);
+        }, duration);
+      };
+
+      // Create Open Button Element
+      const openBtn = doc.createElement('a');
+      openBtn.href = watchUrl;
+      openBtn.className = 'clean-open-btn';
+      openBtn.target = '_blank';
+      openBtn.rel = 'noopener noreferrer';
+      openBtn.title = 'Open Original Page';
+      const openIcon = CACHED_ICONS['OPEN_IN_NEW'].cloneNode(true);
+      if (openIcon) {
+        openBtn.appendChild(openIcon);
+      }
+      doc.body.appendChild(openBtn);
+
+      // Create Download Button Element
+      const downloadBtn = doc.createElement('button');
+      downloadBtn.className = 'clean-download-btn';
+      downloadBtn.title = 'Download HD Video';
+      const downloadIcon = CACHED_ICONS['DOWNLOAD'].cloneNode(true);
+      if (downloadIcon) {
+        downloadBtn.appendChild(downloadIcon);
+      }
+
+      downloadBtn.addEventListener('click', async (e) => {
+        e.stopPropagation();
+        await this.downloadManager.startDownload(
+          videoId,
+          videoInfo,
+          {
+            onStatusChange: (state) => this.ui.updateButtonState(downloadBtn, state),
+            onNotify: showCleanToast,
+          },
+          downloadBtn
+        );
+      });
+      doc.body.appendChild(downloadBtn);
     }
   }
 
