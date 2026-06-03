@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         RedGIFs Video Download Button
 // @namespace    https://github.com/p65536
-// @version      2.5.0
+// @version      2.5.1
 // @license      MIT
 // @description  Adds a download button (for one-click HD downloads) and an "Open in New Tab" button to each video on the RedGIFs site.
 // @icon         https://www.redgifs.com/favicon.ico
@@ -2290,7 +2290,6 @@ pointer-events: auto !important;
     static LIVE_CAM_SELECTOR = '.StreamateCameraDispatcher'; // Live Cam streams (Streamate)
     static AD_SELECTORS = [
       '.metaInfo_isBoosted', // Boosted Ad Posts
-      '.gifNiches', // Promotional Videos containing niches block
     ];
 
     static STYLES = `

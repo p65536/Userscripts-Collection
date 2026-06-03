@@ -20,6 +20,9 @@ This collection contains userscripts designed for adult websites.
 
 ## Recent Updates
 
+### 2026-06-04
+- Updated `RedGIFs Video Download Button` (v2.5.0 -> v2.5.1)  
+
 ### 2026-06-02
 - Updated `RedGIFs Video Download Button` (v2.4.0 -> v2.5.0)  
 
@@ -51,7 +54,7 @@ It also features **customizable user settings** (e.g., Hover Mode) and a powerfu
 
 | Platform | GitHub | Greasy Fork | Sleazy Fork | Version | Last Updated | Changelog |
 | :--- | :--- | :--- | :--- | :--- | :--- | :--- |
-| **RedGifs** | [![Download](https://img.shields.io/badge/Download-blue?style=flat-square&logo=download)](https://raw.githubusercontent.com/p65536/Userscripts-Collection/main/scripts/RedGIFs-Video-Download-Button/RedGIFs-Video-Download-Button.user.js) | [![Greasy Fork](https://img.shields.io/badge/Install-green?style=flat-square&logo=greasyfork)](https://greasyfork.org/en/scripts/545472-redgifs-video-download-button) | [![Sleazy Fork](https://img.shields.io/badge/Install-pink?style=flat-square&logo=greasyfork)](https://sleazyfork.org/en/scripts/545472-redgifs-video-download-button) | 2.5.0 | 2026-06-02 | [View](./docs/RedGIFs-Video-Download-Button/CHANGELOG.md) |
+| **RedGifs** | [![Download](https://img.shields.io/badge/Download-blue?style=flat-square&logo=download)](https://raw.githubusercontent.com/p65536/Userscripts-Collection/main/scripts/RedGIFs-Video-Download-Button/RedGIFs-Video-Download-Button.user.js) | [![Greasy Fork](https://img.shields.io/badge/Install-green?style=flat-square&logo=greasyfork)](https://greasyfork.org/en/scripts/545472-redgifs-video-download-button) | [![Sleazy Fork](https://img.shields.io/badge/Install-pink?style=flat-square&logo=greasyfork)](https://sleazyfork.org/en/scripts/545472-redgifs-video-download-button) | 2.5.1 | 2026-06-04 | [View](./docs/RedGIFs-Video-Download-Button/CHANGELOG.md) |
 
 ##### Configuration (Settings Menu)
 

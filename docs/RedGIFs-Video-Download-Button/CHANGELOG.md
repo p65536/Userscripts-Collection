@@ -1,5 +1,9 @@
 # Changelog
 
+## [2.5.1] - 2026-06-04
+- **Bug Fixes**
+  - [Annoyance] Removed the overly broad `.gifNiches` promotional filtering rule introduced in v2.5.0.
+  
 ## [2.5.0] - 2026-06-02
 - **New Features**
   - Overhauled Clean Viewer UI with a polished vertical button layout.
