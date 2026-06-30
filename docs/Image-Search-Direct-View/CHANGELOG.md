@@ -1,5 +1,9 @@
 # Changelog
 
+## [1.2.1] - 2026-06-30
+- **Core Changes**
+  - [Icon] Embedded the script icon as an inline Data URI to guarantee asset rendering and eliminate external network dependencies.
+
 ## [1.2.0] - 2026-06-29
 - **Core Changes**
   - Fixed a display bug where the settings modal was partially hidden behind sticky page headers (such as on Google Image Search) by increasing its global stacking priority.
