@@ -1,5 +1,12 @@
 # Changelog
 
+## [2.6.0] - 2026-07-11
+- **Core Changes**
+  - Switched tracking engines from network intercept hooks to stable OGP tag extraction to adapt to layout updates (Special thanks to D Duke for the implementation proposal).
+  - Removed the unsafeWindow requirement as window-level interception is no longer performed.
+  - Added native photo asset processing to download workflows and clean views.
+  - Updated download button states with immediate loading tracking and status toasts.
+
 ## [2.5.1] - 2026-06-04
 - **Bug Fixes**
   - [Annoyance] Removed the overly broad `.gifNiches` promotional filtering rule introduced in v2.5.0.

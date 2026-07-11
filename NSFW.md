@@ -20,17 +20,14 @@ This collection contains userscripts designed for adult websites.
 
 ## Recent Updates
 
+### 2026-07-11
+- Updated `RedGIFs Video Download Button` (v2.5.1 -> v2.6.0)  
+
 ### 2026-06-04
 - Updated `RedGIFs Video Download Button` (v2.5.0 -> v2.5.1)  
 
 ### 2026-06-02
 - Updated `RedGIFs Video Download Button` (v2.4.0 -> v2.5.0)  
-
-### 2026-04-24
-- Updated `RedGIFs Video Download Button` (v2.3.0 -> v2.4.0)  
-
-### 2026-01-16
-- Updated `RedGIFs Video Download Button` (v2.2.1 -> v2.3.0)  
 
 ---
 
@@ -38,9 +35,9 @@ This collection contains userscripts designed for adult websites.
 
 ### 1. RedGIFs Video Download Button
 
-This script enhances your RedGIFs experience by adding convenient buttons to each video:
-1. **A download button** for one-click downloads of the HD version.
-2. **An "Open in New Tab" button** to quickly view the video on its own page (or in the distraction-free **Clean Viewer**).
+This script enhances your RedGIFs experience by adding convenient buttons to each video and photo:
+1. **A download button** for one-click downloads of the HD video or maximum-resolution photo.
+2. **An "Open in New Tab" button** to quickly view the media on its own page (or in the distraction-free **Clean Viewer**).
 
 It also features **customizable user settings** (e.g., Hover Mode) and a powerful **Annoyance & Ad Remover** to clean up the UI.
 
@@ -54,7 +51,7 @@ It also features **customizable user settings** (e.g., Hover Mode) and a powerfu
 
 | Platform | GitHub | Greasy Fork | Sleazy Fork | Version | Last Updated | Changelog |
 | :--- | :--- | :--- | :--- | :--- | :--- | :--- |
-| **RedGifs** | [![Download](https://img.shields.io/badge/Download-blue?style=flat-square&logo=download)](https://raw.githubusercontent.com/p65536/Userscripts-Collection/main/scripts/RedGIFs-Video-Download-Button/RedGIFs-Video-Download-Button.user.js) | [![Greasy Fork](https://img.shields.io/badge/Install-green?style=flat-square&logo=greasyfork)](https://greasyfork.org/en/scripts/545472-redgifs-video-download-button) | [![Sleazy Fork](https://img.shields.io/badge/Install-pink?style=flat-square&logo=greasyfork)](https://sleazyfork.org/en/scripts/545472-redgifs-video-download-button) | 2.5.1 | 2026-06-04 | [View](./docs/RedGIFs-Video-Download-Button/CHANGELOG.md) |
+| **RedGifs** | [![Download](https://img.shields.io/badge/Download-blue?style=flat-square&logo=download)](https://raw.githubusercontent.com/p65536/Userscripts-Collection/main/scripts/RedGIFs-Video-Download-Button/RedGIFs-Video-Download-Button.user.js) | [![Greasy Fork](https://img.shields.io/badge/Install-green?style=flat-square&logo=greasyfork)](https://greasyfork.org/en/scripts/545472-redgifs-video-download-button) | [![Sleazy Fork](https://img.shields.io/badge/Install-pink?style=flat-square&logo=greasyfork)](https://sleazyfork.org/en/scripts/545472-redgifs-video-download-button) | 2.6.0 | 2026-07-11 | [View](./docs/RedGIFs-Video-Download-Button/CHANGELOG.md) |
 
 ##### Configuration (Settings Menu)
 
@@ -93,7 +90,7 @@ Access the settings via your userscript manager's menu:
       <li><strong>Viewer Type:</strong>
         <ul>
           <li><strong>Default:</strong> Opens the standard RedGIFs watch page.</li>
-          <li><strong>Clean:</strong> Opens the video in a minimal, player-only window.</li>
+          <li><strong>Clean:</strong> Opens the media in a minimal, player-only or image-only window.</li>
         </ul>
       </li>
     </ul>
@@ -101,7 +98,7 @@ Access the settings via your userscript manager's menu:
   <li>
     <strong>Advanced Settings</strong>
     <ul>
-      <li><strong>Blob Revoke Time:</strong> Adjust the time video data is held in memory. Increase this if your downloads are failing (e.g., saving as 0-byte files) on a slow internet connection.</li>
+      <li><strong>Blob Revoke Time:</strong> Adjust the time media data is held in memory. Increase this if your downloads are failing (e.g., saving as 0-byte files) on a slow internet connection.</li>
     </ul>
   </li>
 </ol>
@@ -112,14 +109,6 @@ Access the settings via your userscript manager's menu:
 
 > Please consider the Annoyance & Ad Removal a "best-effort" bonus feature. The script's core purpose remains the `Download` and `Open in New Tab` buttons.
 > 
-> This feature is tuned for the current RedGIFs site layout (as of 2025/12/03), and future site updates will likely break parts of the removal logic. While I will try to keep it functional, please understand that ongoing maintenance for this specific feature is not guaranteed, as it is secondary to the script's main functionality.
-
-</details>
-
-<details>
-  <summary>Potential Conflict Warning (Click to expand)</summary>
-
-> This script modifies the global `JSON.parse` function and **may conflict with other userscripts that modify the same function**.  
-> If you experience page errors or downloads failing, please **temporarily disable all other userscripts active on RedGIFs** to determine if the cause is **a script conflict** or **a recent site update**.
+> This feature is tuned for the current RedGIFs site layout, and future site updates will likely break parts of the removal logic. While I will try to keep it functional, please understand that ongoing maintenance for this specific feature is not guaranteed, as it is secondary to the script's main functionality.
 
 </details>

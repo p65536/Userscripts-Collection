@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         RedGIFs Video Download Button
 // @namespace    https://github.com/p65536
-// @version      2.5.1
+// @version      2.6.0
 // @license      MIT
 // @description  Adds a download button (for one-click HD downloads) and an "Open in New Tab" button to each video on the RedGIFs site.
 // @icon         https://www.redgifs.com/favicon.ico
@@ -10,7 +10,6 @@
 // @grant        GM.getValue
 // @grant        GM.setValue
 // @grant        GM.registerMenuCommand
-// @grant        unsafeWindow
 // @run-at       document-start
 // @noframes
 // ==/UserScript==
@@ -97,6 +96,21 @@
     MODAL: {
       WIDTH: 400,
       Z_INDEX: 10001,
+    },
+    MEDIA_TYPE: {
+      VIDEO: 'VIDEO',
+      IMAGE: 'IMAGE',
+    },
+    REGEX: {
+      IMAGE_EXT: /\.(jpg|jpeg|png|gif|webp)$/i,
+      SILENT_VIDEO: /-silent(?=\.mp4)/,
+      IMAGE_SIZE_MEDIUM: /-medium(?=\.jpg)/,
+      IMAGE_SIZE_SMALL: /-small(?=\.jpg)/,
+    },
+    IMAGE_SIZE_SCORE: {
+      LARGE: 3,
+      MEDIUM: 2,
+      SMALL: 1,
     },
   };
 
@@ -1658,166 +1672,291 @@ background-color: #c00;
   }
 
   // =================================================================================
-  // SECTION: API Manager
+  // SECTION: MediaInfoManager – Extract media info from Page Metadata
+  // Handles structural extraction from static metadata and JSON-LD.
+  // Supports both high-resolution videos and image elements natively.
   // =================================================================================
 
-  class ApiManager {
-    /**
-     * Extracts the video ID from a 'gif' object in the API response.
-     * @param {object} gif - The gif object from the API.
-     * @returns {string|undefined} The video ID.
-     */
-    static #API_GIF_ID_EXTRACTOR = (gif) => gif?.id;
-
-    /**
-     * Extracts the HD video URL from a 'gif' object in the API response.
-     * @param {object} gif - The gif object from the API.
-     * @returns {string|undefined} The HD URL.
-     */
-    static #API_GIF_HD_URL_EXTRACTOR = (gif) => gif?.urls?.hd;
-
-    /**
-     * Extracts the User Name from a 'gif' object in the API response.
-     * @param {object} gif - The gif object from the API.
-     * @returns {string|undefined} The User Name.
-     */
-    static #API_GIF_USERNAME_EXTRACTOR = (gif) => gif?.userName;
-
-    /**
-     * Extracts the Create Date (timestamp) from a 'gif' object in the API response.
-     * @param {object} gif - The gif object from the API.
-     * @returns {number|undefined} The creation timestamp.
-     */
-    static #API_GIF_CREATEDATE_EXTRACTOR = (gif) => gif?.createDate;
-
-    /**
-     * Extracts the tags from a 'gif' object in the API response.
-     * @param {object} gif - The gif object from the API.
-     * @returns {string[]|undefined} The tags.
-     */
-    static #API_GIF_TAGS_EXTRACTOR = (gif) => gif?.tags;
-
+  class MediaInfoManager {
     constructor() {
       /** @type {Map<string, {hdUrl: string, userName: string, createDate: number, tags: string[]|undefined}>} */
       this.videoCache = new Map();
-      this._initJsonInterceptor();
     }
 
     /**
-     * Gets the cached Video Info for a given video ID.
-     * @param {string} videoId The ID of the video.
-     * @returns {{hdUrl: string, userName: string, createDate: number, tags: string[]|undefined}|undefined} The cached info object or undefined if not found.
+     * Gets media info (video or image) by extracting from the page's meta tags and JSON-LD.
+     * For videos, we fix the URL (remove -silent).
+     * For images, we pick the largest variant.
+     * @param {string} mediaId
+     * @returns {Promise<{hdUrl: string, userName: string, createDate: number, tags: string[]|undefined} | null>}
      */
-    getCachedVideoInfo(videoId) {
-      // Normalize ID to lowercase for cache lookup
-      return this.videoCache.get(videoId.toLowerCase());
-    }
+    async getMediaInfo(mediaId) {
+      const normalizedId = mediaId.toLowerCase();
 
-    /**
-     * Sets up interceptors for JSON.parse and Response.prototype.json to capture API responses.
-     * Uses unsafeWindow to ensure access to the page's context.
-     * @private
-     */
-    _initJsonInterceptor() {
-      const globalScope = unsafeWindow;
-      const self = this;
+      // Check cache first
+      if (this.videoCache.has(normalizedId)) {
+        return this.videoCache.get(normalizedId);
+      }
 
-      // 1. Hook JSON.parse
-      // Captures traditional JSON parsing (e.g. from XHR or text-based fetch)
-      const originalJsonParse = globalScope.JSON.parse;
-      globalScope.JSON.parse = function (text, reviver) {
-        // Execute original function first. If this fails, let it throw naturally.
-        const result = originalJsonParse.call(this, text, reviver);
+      // First try to extract from the current page if we're on the watch page
+      const info = this._extractFromCurrentPage(normalizedId);
+      if (info) {
+        this.videoCache.set(normalizedId, info);
+        Logger.log('MEDIA HIT', LOG_STYLES.TEAL, `Extracted info for ${normalizedId} from current page`);
+        return info;
+      }
 
-        // Safely intercept the result without affecting the site's flow
-        try {
-          self._processApiData(result);
-        } catch (e) {
-          // Silent fail to ensure site functionality is never broken
-          Logger.error('INTERCEPT', LOG_STYLES.RED, 'JSON intercept error:', e);
+      // If not on watch page, fetch the watch page HTML and parse
+      try {
+        const watchUrl = `${CONSTANTS.WATCH_URL_BASE}${normalizedId}`;
+        const response = await fetch(watchUrl);
+        if (!response.ok) {
+          throw new HttpError(response.status, `Failed to fetch watch page: ${response.status}`);
         }
+        const html = await response.text();
+        const parser = new DOMParser();
+        const doc = parser.parseFromString(html, 'text/html');
 
-        return result;
-      };
+        // Detect media type
+        const ogType = doc.querySelector('meta[property="og:type"]');
+        const isImage = ogType && ogType.getAttribute('content') === 'image';
 
-      // 2. Hook Response.prototype.json
-      // Captures modern fetch() API calls that use .json() directly
-      if (globalScope.Response && globalScope.Response.prototype) {
-        const originalResponseJson = globalScope.Response.prototype.json;
-        globalScope.Response.prototype.json = async function () {
-          // Execute original function first. If promise rejects, propagate it.
-          const result = await originalResponseJson.call(this);
-
-          // Safely intercept the result
-          try {
-            self._processApiData(result);
-          } catch (e) {
-            // Silent fail
-            Logger.error('INTERCEPT', LOG_STYLES.RED, 'Response intercept error:', e);
+        // For images, look for og:image:url with the largest size (prefer "large")
+        if (isImage) {
+          // Collect all og:image:url and og:image tags
+          const imageMetaTags = doc.querySelectorAll('meta[property="og:image:url"], meta[property="og:image"]');
+          let bestImageUrl = null;
+          let bestSize = 0;
+          for (const meta of imageMetaTags) {
+            const url = meta.getAttribute('content');
+            if (!url) continue;
+            // Try to infer size from filename or from associated width/height meta
+            // Prefer URLs containing "large" or with higher resolution
+            let size = 0;
+            if (url.includes('large')) size = CONSTANTS.IMAGE_SIZE_SCORE.LARGE;
+            else if (url.includes('medium')) size = CONSTANTS.IMAGE_SIZE_SCORE.MEDIUM;
+            else if (url.includes('small')) size = CONSTANTS.IMAGE_SIZE_SCORE.SMALL;
+            // Also check for explicit width meta (if available)
+            const widthMeta = doc.querySelector('meta[property="og:image:width"]');
+            if (widthMeta) {
+              const w = parseInt(widthMeta.getAttribute('content'), 10);
+              if (!isNaN(w) && w > size) size = w;
+            }
+            if (size > bestSize) {
+              bestSize = size;
+              bestImageUrl = url;
+            }
+          }
+          if (!bestImageUrl) {
+            Logger.warn('MEDIA ERROR', LOG_STYLES.YELLOW, `No image URL found for ${normalizedId}`);
+            return null;
           }
 
-          return result;
-        };
+          const metadata = this._extractMetadataFromDoc(doc);
+          const infoObj = {
+            hdUrl: bestImageUrl,
+            userName: metadata.userName ?? '',
+            createDate: metadata.createDate ?? 0,
+            tags: metadata.tags,
+          };
+          this.videoCache.set(normalizedId, infoObj);
+          Logger.log('MEDIA HIT', LOG_STYLES.TEAL, `Fetched image info for ${normalizedId} from watch page`);
+          return infoObj;
+        }
+
+        // For videos, use existing logic
+        const ogVideo = doc.querySelector('meta[property="og:video"]');
+        if (ogVideo && ogVideo.getAttribute('content')) {
+          let hdUrl = ogVideo.getAttribute('content');
+          // Remove "-silent" to get the full version
+          hdUrl = hdUrl.replace(CONSTANTS.REGEX.SILENT_VIDEO, '');
+
+          const metadata = this._extractMetadataFromDoc(doc);
+          const infoObj = {
+            hdUrl: hdUrl,
+            userName: metadata.userName ?? '',
+            createDate: metadata.createDate ?? 0,
+            tags: metadata.tags,
+          };
+          this.videoCache.set(normalizedId, infoObj);
+          Logger.log('MEDIA HIT', LOG_STYLES.TEAL, `Fetched video info for ${normalizedId} from watch page`);
+          return infoObj;
+        }
+
+        Logger.warn('MEDIA ERROR', LOG_STYLES.YELLOW, `Could not find media URL in page for ${normalizedId}`);
+        return null;
+      } catch (error) {
+        Logger.error('MEDIA ERROR', LOG_STYLES.RED, `Failed to fetch media info for ${normalizedId}:`, error);
+        return null;
       }
     }
 
     /**
-     * Processes the parsed API data to cache video URLs.
-     * @param {object} data The parsed JSON data from the API.
+     * Extracts metadata (userName, tags, createDate) from a parsed document.
+     * @param {Document} doc
+     * @returns {{userName: string|undefined, tags: string[]|undefined, createDate: number|undefined}}
      * @private
      */
-    _processApiData(data) {
+    _extractMetadataFromDoc(doc) {
+      let userName = undefined;
+      const authorMeta = doc.querySelector('meta[name="author"]');
+      if (authorMeta) userName = authorMeta.getAttribute('content') ?? undefined;
+      if (!userName) {
+        // Try JSON-LD
+        const jsonLdScripts = doc.querySelectorAll('script[type="application/ld+json"]');
+        for (const script of jsonLdScripts) {
+          try {
+            const text = script.textContent;
+            if (!text) continue;
+            const data = JSON.parse(text);
+            if (data.author && data.author.name) userName = data.author.name;
+            else if (data.video && data.video.author) userName = data.video.author;
+            if (userName) break;
+          } catch (e) {}
+        }
+      }
+
+      let tags = undefined;
+      const keywordsMeta = doc.querySelector('meta[name="keywords"]');
+      if (keywordsMeta) {
+        const keywords = keywordsMeta.getAttribute('content');
+        if (keywords)
+          tags = keywords
+            .split(',')
+            .map((t) => t.trim())
+            .filter((t) => t.length > 0);
+      }
+
+      let createDate = undefined;
+      const jsonLdScripts = doc.querySelectorAll('script[type="application/ld+json"]');
+      for (const script of jsonLdScripts) {
+        try {
+          const text = script.textContent;
+          if (!text) continue;
+          const data = JSON.parse(text);
+          if (data.video && data.video.uploadDate) {
+            const date = new Date(data.video.uploadDate);
+            if (!isNaN(date.getTime())) createDate = Math.floor(date.getTime() / 1000);
+          }
+          if (data.datePublished) {
+            const date = new Date(data.datePublished);
+            if (!isNaN(date.getTime())) createDate = Math.floor(date.getTime() / 1000);
+          }
+          if (createDate) break;
+        } catch (e) {}
+      }
+
+      return { userName, tags, createDate };
+    }
+
+    /**
+     * Extracts media info from the current page's meta tags.
+     * Handles both video and image pages.
+     * @param {string} mediaId
+     * @returns {{hdUrl: string, userName: string, createDate: number, tags: string[]|undefined} | null}
+     * @private
+     */
+    _extractFromCurrentPage(mediaId) {
       try {
-        // Handle both single 'gif' object (watch page) and 'gifs' array (feeds)
-        const gifsToProcess = [];
-        if (data && Array.isArray(data.gifs)) {
-          gifsToProcess.push(...data.gifs);
-        }
-        // Also check for the single 'gif' object
-        if (data && data.gif && typeof data.gif === 'object') {
-          gifsToProcess.push(data.gif);
-        }
+        // Detect media type: if og:type is "image", treat as image
+        const ogType = document.querySelector('meta[property="og:type"]');
+        const isImage = ogType && ogType.getAttribute('content') === 'image';
 
-        // Check if we have any gifs to process
-        if (gifsToProcess.length > 0) {
-          let count = 0;
-          for (const gif of gifsToProcess) {
-            // Use internal static extractors
-            // Extractors are null-safe (e.g., gif?.id)
-            const videoId = ApiManager.#API_GIF_ID_EXTRACTOR(gif);
-            const hdUrl = ApiManager.#API_GIF_HD_URL_EXTRACTOR(gif);
+        // For images, find the largest image URL
+        if (isImage) {
+          // Look for the image element on the page (the displayed image)
+          const imgEl = document.querySelector('.ImageGif-Thumbnail');
 
-            // Only require videoId and hdUrl to cache.
-            if (videoId && hdUrl) {
-              // Normalize ID to lowercase for cache storage to match HTML attributes
-              const normalizedId = videoId.toLowerCase();
+          // Verify element type before accessing properties
+          if (imgEl instanceof HTMLImageElement && imgEl.src) {
+            let hdUrl = imgEl.src;
+            // Prefer -large if available
+            if (hdUrl.includes('-large')) {
+              // already large
+            } else if (hdUrl.includes('-medium')) {
+              hdUrl = hdUrl.replace(CONSTANTS.REGEX.IMAGE_SIZE_MEDIUM, '-large');
+            } else if (hdUrl.includes('-small')) {
+              hdUrl = hdUrl.replace(CONSTANTS.REGEX.IMAGE_SIZE_SMALL, '-large');
+            }
+            const metadata = this._extractMetadataFromDoc(document);
+            return {
+              hdUrl: hdUrl,
+              userName: metadata.userName ?? '',
+              createDate: metadata.createDate ?? 0,
+              tags: metadata.tags,
+            };
+          }
 
-              if (!this.videoCache.has(normalizedId)) {
-                // Get optional metadata. These can be undefined.
-                const userName = ApiManager.#API_GIF_USERNAME_EXTRACTOR(gif);
-                const createDate = ApiManager.#API_GIF_CREATEDATE_EXTRACTOR(gif);
-                const tags = ApiManager.#API_GIF_TAGS_EXTRACTOR(gif);
-
-                // Store the info object, possibly with undefined values.
-                this.videoCache.set(normalizedId, { hdUrl, userName, createDate, tags });
-                count++;
-              }
+          // Fallback: look for og:image meta with the largest size
+          const imageMetaTags = document.querySelectorAll('meta[property="og:image:url"], meta[property="og:image"]');
+          let bestImageUrl = null;
+          let bestSize = 0;
+          for (const meta of imageMetaTags) {
+            const url = meta.getAttribute('content');
+            if (!url) continue;
+            let size = 0;
+            if (url.includes('large')) size = CONSTANTS.IMAGE_SIZE_SCORE.LARGE;
+            else if (url.includes('medium')) size = CONSTANTS.IMAGE_SIZE_SCORE.MEDIUM;
+            else if (url.includes('small')) size = CONSTANTS.IMAGE_SIZE_SCORE.SMALL;
+            const widthMeta = document.querySelector('meta[property="og:image:width"]');
+            if (widthMeta) {
+              const w = parseInt(widthMeta.getAttribute('content'), 10);
+              if (!isNaN(w) && w > size) size = w;
+            }
+            if (size > bestSize) {
+              bestSize = size;
+              bestImageUrl = url;
             }
           }
+          if (!bestImageUrl) {
+            Logger.warn('MEDIA ERROR', LOG_STYLES.YELLOW, `No image URL found in current page for ${mediaId}`);
+            return null;
+          }
+          const metadata = this._extractMetadataFromDoc(document);
+          return {
+            hdUrl: bestImageUrl,
+            userName: metadata.userName ?? '',
+            createDate: metadata.createDate ?? 0,
+            tags: metadata.tags,
+          };
+        }
 
-          // Log on successful processing
-          const path = '[JSON_PARSE]';
+        // For videos: first try to get the video element's src if it's not a blob
+        const videoEl = document.querySelector('video[src]');
 
-          if (count > 0) {
-            Logger.log('CACHE UPDATED', LOG_STYLES.TEAL, `${path} Added ${count} new items. Total: ${this.videoCache.size}`);
-          } else {
-            // Log if the feed contained items, but all were already cached.
-            Logger.log('API HIT', LOG_STYLES.TEAL, `${path} (No new items added. Cache total: ${this.videoCache.size})`);
+        // Verify element type before accessing properties
+        if (videoEl instanceof HTMLVideoElement) {
+          const src = videoEl.src || videoEl.currentSrc;
+          if (src && !src.startsWith('blob:')) {
+            const metadata = this._extractMetadataFromDoc(document);
+            return {
+              hdUrl: src,
+              userName: metadata.userName ?? '',
+              createDate: metadata.createDate ?? 0,
+              tags: metadata.tags,
+            };
           }
         }
-        // If no gifs found (e.g., an empty feed or non-media API response), silently do nothing.
+
+        // Fallback to og:video meta
+        const ogVideo = document.querySelector('meta[property="og:video"]');
+        if (ogVideo) {
+          const hdUrl = ogVideo.getAttribute('content');
+          if (hdUrl) {
+            const sanitizedUrl = hdUrl.replace(CONSTANTS.REGEX.SILENT_VIDEO, '');
+            const metadata = this._extractMetadataFromDoc(document);
+            return {
+              hdUrl: sanitizedUrl,
+              userName: metadata.userName ?? '',
+              createDate: metadata.createDate ?? 0,
+              tags: metadata.tags,
+            };
+          }
+        }
+        return null;
       } catch (error) {
-        Logger.warn('API ERROR', LOG_STYLES.YELLOW, 'Failed to process API data object:', error, data);
+        Logger.warn('MEDIA ERROR', LOG_STYLES.YELLOW, `Failed to extract from page:`, error);
+        return null;
       }
     }
   }
@@ -1841,74 +1980,72 @@ background-color: #c00;
 
     /**
      * Handles the download process, managing states and notifications via callbacks.
-     * @param {string} videoId
-     * @param {object} videoInfo
+     * @param {string} mediaId
+     * @param {object} mediaInfo
      * @param {object} callbacks
-     * @param {Function} callbacks.onStatusChange - Callback to update UI button state ('IDLE'|'LOADING_LOCKED'|'LOADING_CANCELLABLE'|'SUCCESS'|'ERROR')
-     * @param {Function} callbacks.onNotify - Callback to display toast notifications (message, type)
+     * @param {Function} callbacks.onStatusChange - Callback to update UI button state
+     * @param {Function} callbacks.onNotify - Callback to display toast notifications
      * @param {HTMLButtonElement} buttonElement
      */
-    async startDownload(videoId, videoInfo, callbacks, buttonElement) {
+    async startDownload(mediaId, mediaInfo, callbacks, buttonElement) {
       const { onStatusChange, onNotify } = callbacks;
 
       // 1. Cancellation Logic
-      if (this.activeDownloads.has(videoId)) {
+      if (this.activeDownloads.has(mediaId)) {
         if (buttonElement.disabled) return;
-
-        Logger.log('DOWNLOAD', LOG_STYLES.YELLOW, `Cancelling download for ${videoId}...`);
-        const controller = this.activeDownloads.get(videoId);
+        Logger.log('DOWNLOAD', LOG_STYLES.YELLOW, `Cancelling download for ${mediaId}...`);
+        const controller = this.activeDownloads.get(mediaId);
         controller.abort();
         onStatusChange('IDLE');
         return;
       }
 
       const controller = new AbortController();
-      this.activeDownloads.set(videoId, controller);
+      this.activeDownloads.set(mediaId, controller);
 
       onStatusChange('LOADING_LOCKED');
       onNotify('Download started...', 'info');
-
       setTimeout(() => {
-        if (this.activeDownloads.has(videoId)) {
+        if (this.activeDownloads.has(mediaId)) {
           onStatusChange('LOADING_CANCELLABLE');
         }
       }, CONSTANTS.CANCEL_LOCK_DURATION);
 
       try {
-        if (videoInfo) {
-          Logger.log('CACHE HIT', LOG_STYLES.TEAL, `Starting download for ${videoId}`);
-          await this._executeDownload(videoInfo, videoId, controller.signal);
+        if (mediaInfo) {
+          Logger.log('CACHE HIT', LOG_STYLES.TEAL, `Starting download for ${mediaId}`);
+          await this._executeDownload(mediaInfo, mediaId, controller.signal);
 
           onStatusChange('SUCCESS');
           onNotify('Download successful!', 'success');
-          Logger.log('DOWNLOAD', LOG_STYLES.GREEN, `Downloaded ${videoId} from:`, videoInfo.hdUrl);
+          Logger.log('DOWNLOAD', LOG_STYLES.GREEN, `Downloaded ${mediaId} from:`, mediaInfo.hdUrl);
         } else {
-          Logger.warn('CACHE MISS', LOG_STYLES.YELLOW, `Video info not found in cache for ${videoId}.`);
-          onNotify('Video info not found in cache. (Try scrolling or refreshing)', 'error');
+          Logger.warn('CACHE MISS', LOG_STYLES.YELLOW, `Media info not found in cache for ${mediaId}.`);
+          onNotify('Media info not found. (Try refreshing)', 'error');
           onStatusChange('ERROR');
         }
       } catch (error) {
         if (error.name === 'AbortError') {
-          Logger.log('DOWNLOAD', LOG_STYLES.YELLOW, `Download process for ${videoId} was aborted.`);
+          Logger.log('DOWNLOAD', LOG_STYLES.YELLOW, `Download process for ${mediaId} was aborted.`);
           onNotify('Download cancelled.', 'info');
-          if (this.activeDownloads.has(videoId)) {
+          if (this.activeDownloads.has(mediaId)) {
             onStatusChange('IDLE');
           }
         } else if (error instanceof HttpError && error.status === 404) {
-          Logger.warn('DOWNLOAD', LOG_STYLES.YELLOW, `Download failed: Not Found (404) for ${videoId}`, error);
-          onNotify('Video not found (404).', 'error');
+          Logger.warn('DOWNLOAD', LOG_STYLES.YELLOW, `Download failed: Not Found (404) for ${mediaId}`, error);
+          onNotify('Media not found (404).', 'error');
           onStatusChange('ERROR');
         } else if (error instanceof HttpError && error.status === 403) {
-          Logger.warn('DOWNLOAD', LOG_STYLES.YELLOW, `Download failed: Forbidden (403) for ${videoId}`, error);
+          Logger.warn('DOWNLOAD', LOG_STYLES.YELLOW, `Download failed: Forbidden (403) for ${mediaId}`, error);
           onNotify('Access forbidden (403).', 'error');
           onStatusChange('ERROR');
         } else {
           Logger.error('DOWNLOAD', LOG_STYLES.RED, 'Download failed:', error);
-          onNotify('Download failed. (Network error or site update?)', 'error');
+          onNotify('Download failed. (Network error?)', 'error');
           onStatusChange('ERROR');
         }
       } finally {
-        this.activeDownloads.delete(videoId);
+        this.activeDownloads.delete(mediaId);
       }
     }
 
@@ -1916,21 +2053,18 @@ background-color: #c00;
      * Performs the actual download process (file save).
      * @private
      */
-    async _executeDownload(videoInfo, videoId, signal) {
+    async _executeDownload(mediaInfo, mediaId, signal) {
       const config = this.configManager.get();
-      const { hdUrl, userName, createDate, tags } = videoInfo;
+      const { hdUrl, userName, createDate, tags } = mediaInfo;
       const downloadUrl = hdUrl;
-
       const dateString = createDate && typeof createDate === 'number' ? formatTimestamp(createDate) : '';
       const tagsText = Array.isArray(tags) && tags.length > 0 ? '#' + tags.join('_#') : '';
-
       const replacements = {
         user: userName || '',
         date: dateString,
-        id: videoId || '',
+        id: mediaId || '',
         tags: tagsText,
       };
-
       const baseFilename = resolveFilename(config.download.filenameTemplate, replacements);
       let extension = getExtension(hdUrl);
 
@@ -1954,11 +2088,11 @@ background-color: #c00;
         throw new HttpError(response.status, `Server responded with ${response.status}`);
       }
 
-      const videoBlob = await response.blob();
+      const blob = await response.blob();
       let objectUrl = null;
       let link = null;
       try {
-        objectUrl = URL.createObjectURL(videoBlob);
+        objectUrl = URL.createObjectURL(blob);
         this.activeBlobUrls.add(objectUrl);
         link = h('a', {
           href: objectUrl,
@@ -2776,8 +2910,8 @@ visibility: hidden !important;
     constructor() {
       /** @type {ConfigManager} */
       this.configManager = new ConfigManager();
-      /** @type {ApiManager} */
-      this.apiManager = new ApiManager();
+      /** @type {MediaInfoManager} */
+      this.mediaInfoManager = new MediaInfoManager();
       /** @type {UIManager} */
       this.ui = new UIManager(this.configManager); // Pass configManager to UIManager
       /** @type {AnnoyanceManager} */
@@ -2867,9 +3001,9 @@ visibility: hidden !important;
     }
 
     /**
-     * Generic handler for found elements (replaces _onTileItemFound and _onPreviewFound).
+     * Generic handler for found elements.
      * @param {HTMLElement} element The found DOM element.
-     * @param {(element: HTMLElement) => string|null} idExtractor A function to extract the video ID from the element.
+     * @param {(element: HTMLElement) => string|null} idExtractor A function to extract the media ID from the element.
      * @param {string} type The context type of the element (from CONSTANTS.CONTEXT_TYPE).
      * @private
      */
@@ -2878,29 +3012,27 @@ visibility: hidden !important;
         return;
       }
 
-      const videoId = idExtractor(element);
-
-      // Robust check: Ensure videoId is truthy (not null, undefined, or empty string)
-      if (videoId) {
-        this._addButtonsToElement(element, videoId, type);
+      const mediaId = idExtractor(element);
+      // Robust check: Ensure mediaId is truthy (not null, undefined, or empty string)
+      if (mediaId) {
+        this._addButtonsToElement(element, mediaId, type);
       }
     }
 
     /**
-     * Adds buttons to a given element.
+     * Adds dynamic interface controls to a verified element structure context.
      * @param {HTMLElement} element The parent element for the buttons.
-     * @param {string} videoId The video ID associated with the buttons.
+     * @param {string} mediaId The media ID associated with the buttons.
      * @param {string} type The context type (from CONSTANTS.CONTEXT_TYPE).
      * @private
      */
-    _addButtonsToElement(element, videoId, type) {
+    _addButtonsToElement(element, mediaId, type) {
       const isTile = type === CONSTANTS.CONTEXT_TYPE.TILE;
-
       // --- 1. Open in New Tab Button (Link) ---
       // Always create the button elements. Visibility is toggled via CSS based on settings.
       {
         const className = isTile ? `${APPID}-open-in-new-tab-btn` : `${APPID}-preview-open-btn`;
-        const url = `${CONSTANTS.WATCH_URL_BASE}${videoId}`;
+        const url = `${CONSTANTS.WATCH_URL_BASE}${mediaId}`;
 
         // Determine icon and title based on config
         const config = this.configManager.get();
@@ -2922,13 +3054,20 @@ visibility: hidden !important;
               e.preventDefault();
               e.stopPropagation();
 
-              const videoInfo = this.apiManager.getCachedVideoInfo(videoId);
-              if (videoInfo) {
-                this._openCleanViewer(videoInfo, videoId);
-              } else {
-                // Fallback if info not cached: open standard page
-                window.open(url, '_blank');
-              }
+              this.mediaInfoManager
+                .getMediaInfo(mediaId)
+                .then((mediaInfo) => {
+                  if (mediaInfo) {
+                    this._openCleanViewer(mediaInfo, mediaId);
+                  } else {
+                    // Fallback if info not cached: open standard page
+                    window.open(url, '_blank');
+                  }
+                })
+                .catch((err) => {
+                  Logger.error('MEDIA ERROR', LOG_STYLES.RED, 'Asynchronous data resolution failed for Clean Viewer fallback execution:', err);
+                  window.open(url, '_blank');
+                });
             } else {
               // Default behavior: stop propagation to prevent parent navigation, but let the link work
               e.stopPropagation();
@@ -2940,8 +3079,7 @@ visibility: hidden !important;
       // --- 2. Download Button (Action) ---
       {
         const className = isTile ? `${APPID}-tile-download-btn` : `${APPID}-preview-download-btn`;
-        const clickHandler = (e) => this._handleDownloadClick(e, videoId);
-
+        const clickHandler = (e) => this._handleDownloadClick(e, mediaId);
         this.ui.createButton({
           parentElement: element,
           className: className,
@@ -2972,39 +3110,55 @@ visibility: hidden !important;
      * Handles the click event on the download button.
      * Manages download start, 1s lock, and cancellation.
      * @param {MouseEvent} e - The click event.
-     * @param {string} videoId - The ID of the video to download.
+     * @param {string} mediaId - The ID of the media to download.
      * @private
      */
-    async _handleDownloadClick(e, videoId) {
+    async _handleDownloadClick(e, mediaId) {
       e.stopPropagation(); // Prevent parent elements from handling the click.
 
       const button = e.currentTarget;
       if (!(button instanceof HTMLButtonElement)) return; // Type Guard
 
-      const videoInfo = this.apiManager.getCachedVideoInfo(videoId);
+      // Show loading state immediately to improve synchronous interface response UX
+      this.ui.updateButtonState(button, 'LOADING_LOCKED');
+      this.ui.showToast('Fetching media info...', 'info');
 
-      await this.downloadManager.startDownload(
-        videoId,
-        videoInfo,
-        {
-          onStatusChange: (state) => this.ui.updateButtonState(button, state),
-          onNotify: (message, type) => this.ui.showToast(message, type),
-        },
-        button
-      );
+      try {
+        const mediaInfo = await this.mediaInfoManager.getMediaInfo(mediaId);
+        if (!mediaInfo) {
+          this.ui.showToast('Could not retrieve media details.', 'error');
+          this.ui.updateButtonState(button, 'ERROR');
+          return;
+        }
+
+        await this.downloadManager.startDownload(
+          mediaId,
+          mediaInfo,
+          {
+            onStatusChange: (state) => this.ui.updateButtonState(button, state),
+            onNotify: (message, type) => this.ui.showToast(message, type),
+          },
+          button
+        );
+      } catch (err) {
+        Logger.error('DOWNLOAD ERROR', LOG_STYLES.RED, 'Critical error encountered inside download click handler execution loop:', err);
+        this.ui.showToast('Download initialization failed.', 'error');
+        this.ui.updateButtonState(button, 'ERROR');
+      }
     }
 
     /**
-     * Opens the video in a clean, minimalist viewer in a new tab.
-     * @param {object} videoInfo - The cached video info.
-     * @param {string} videoId - The video ID.
+     * Opens the media in a clean, minimalist viewer in a new tab.
+     * For videos, it uses <video>; for images, it shows the image directly.
+     * @param {object} mediaInfo - The cached media info.
+     * @param {string} mediaId - The media ID.
      * @private
      */
-    _openCleanViewer(videoInfo, videoId) {
-      const { hdUrl, userName } = videoInfo;
-      const watchUrl = `${CONSTANTS.WATCH_URL_BASE}${videoId}`;
-      // Construct title: "UserName - VideoID" or fallback to "RedGIFs - VideoID"
-      const pageTitle = userName ? `${userName} - ${videoId}` : `RedGIFs - ${videoId}`;
+    _openCleanViewer(mediaInfo, mediaId) {
+      const { hdUrl, userName } = mediaInfo;
+      const watchUrl = `${CONSTANTS.WATCH_URL_BASE}${mediaId}`;
+      // Construct title: "UserName - MediaID" or fallback to "RedGIFs - MediaID"
+      const pageTitle = userName ? `${userName} - ${mediaId}` : `RedGIFs - ${mediaId}`;
 
       const newWindow = window.open('', '_blank');
       if (!newWindow) {
@@ -3020,7 +3174,6 @@ visibility: hidden !important;
       }
 
       const doc = newWindow.document;
-
       // DOM Initialization Safety
       // Ensure essential nodes exist. If document is fundamentally broken, fallback to standard page.
       try {
@@ -3028,8 +3181,8 @@ visibility: hidden !important;
           throw new Error('Document structure is not ready');
         }
         // Auto-heal missing head/body (common in about:blank)
-        if (!doc.head) doc.documentElement.appendChild(doc.createElement('head'));
-        if (!doc.body) doc.documentElement.appendChild(doc.createElement('body'));
+        if (!doc.head) doc.documentElement.appendChild(h('head'));
+        if (!doc.body) doc.documentElement.appendChild(h('body'));
       } catch (e) {
         // Fallback: Navigate the blank window to the standard watch page
         newWindow.location.href = watchUrl;
@@ -3052,24 +3205,46 @@ visibility: hidden !important;
         fontFamily: '-apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Helvetica, Arial, sans-serif',
       });
 
-      // Create styles for Buttons and Video
-      const styleEl = doc.createElement('style');
+      // Determine if it's an image or video by extension
+      const isImage = CONSTANTS.REGEX.IMAGE_EXT.test(getExtension(hdUrl));
+
+      // Create styles for Buttons and Video/Image
+      const styleEl = h('style', { type: 'text/css' });
       styleEl.textContent = UI_STYLES_TEMPLATE + CLEAN_VIEWER_STYLES;
       doc.head.appendChild(styleEl);
 
-      // Create Video Element
-      const videoEl = doc.createElement('video');
-      videoEl.src = hdUrl;
-      videoEl.controls = true;
-      videoEl.autoplay = true;
-      videoEl.loop = true;
-      videoEl.muted = true; // Required for autoplay
-      videoEl.playsInline = true;
-      doc.body.appendChild(videoEl);
+      if (isImage) {
+        // Display image
+        const imgEl = h('img', {
+          src: hdUrl,
+          style: {
+            maxWidth: '100%',
+            maxHeight: '100%',
+            objectFit: 'contain',
+          },
+        });
+        doc.body.appendChild(imgEl);
+      } else {
+        // Display video
+        const videoEl = h('video', {
+          src: hdUrl,
+        });
+
+        // Explicitly assign properties to the HTMLVideoElement instance to satisfy
+        // browser Autoplay Policies and ensure maximum flexibility for potential
+        // dynamic UI/control bar toggling in future updates.
+        if (videoEl instanceof HTMLVideoElement) {
+          videoEl.autoplay = true;
+          videoEl.loop = true;
+          videoEl.muted = true;
+          videoEl.playsInline = true;
+          videoEl.controls = true;
+        }
+        doc.body.appendChild(videoEl);
+      }
 
       // Create Toast Container for Child Window
-      const toastContainer = doc.createElement('div');
-      toastContainer.className = `${APPID}-toast-container`;
+      const toastContainer = h(`div.${APPID}-toast-container`);
       doc.body.appendChild(toastContainer);
 
       /**
@@ -3079,9 +3254,7 @@ visibility: hidden !important;
        */
       const showCleanToast = (message, type) => {
         const toastClass = `${APPID}-toast-${type}`;
-        const toastElement = doc.createElement('div');
-        toastElement.className = `${APPID}-toast ${toastClass}`;
-        toastElement.textContent = message;
+        const toastElement = h(`div.${APPID}-toast`, { className: toastClass }, message);
         toastContainer.appendChild(toastElement);
 
         const duration = type === 'error' ? CONSTANTS.TOAST_ERROR_DURATION : CONSTANTS.TOAST_DURATION;
@@ -3095,12 +3268,12 @@ visibility: hidden !important;
       };
 
       // Create Open Button Element
-      const openBtn = doc.createElement('a');
-      openBtn.href = watchUrl;
-      openBtn.className = 'clean-open-btn';
-      openBtn.target = '_blank';
-      openBtn.rel = 'noopener noreferrer';
-      openBtn.title = 'Open Original Page';
+      const openBtn = h('a.clean-open-btn', {
+        href: watchUrl,
+        target: '_blank',
+        rel: 'noopener noreferrer',
+        title: 'Open Original Page',
+      });
       const openIcon = CACHED_ICONS['OPEN_IN_NEW'].cloneNode(true);
       if (openIcon) {
         openBtn.appendChild(openIcon);
@@ -3108,26 +3281,33 @@ visibility: hidden !important;
       doc.body.appendChild(openBtn);
 
       // Create Download Button Element
-      const downloadBtn = doc.createElement('button');
-      downloadBtn.className = 'clean-download-btn';
-      downloadBtn.title = 'Download HD Video';
+      const downloadBtn = h('button.clean-download-btn', {
+        title: 'Download HD Video',
+      });
       const downloadIcon = CACHED_ICONS['DOWNLOAD'].cloneNode(true);
       if (downloadIcon) {
         downloadBtn.appendChild(downloadIcon);
       }
 
-      downloadBtn.addEventListener('click', async (e) => {
-        e.stopPropagation();
-        await this.downloadManager.startDownload(
-          videoId,
-          videoInfo,
-          {
-            onStatusChange: (state) => this.ui.updateButtonState(downloadBtn, state),
-            onNotify: showCleanToast,
-          },
-          downloadBtn
-        );
-      });
+      // Ensure the created element is a functional button before binding events
+      if (downloadBtn instanceof HTMLButtonElement) {
+        downloadBtn.addEventListener('click', (e) => {
+          e.stopPropagation();
+          this.downloadManager
+            .startDownload(
+              mediaId,
+              mediaInfo,
+              {
+                onStatusChange: (state) => this.ui.updateButtonState(downloadBtn, state),
+                onNotify: showCleanToast,
+              },
+              downloadBtn
+            )
+            .catch((err) => {
+              Logger.error('DOWNLOAD ERROR', LOG_STYLES.RED, 'Asynchronous operations tracking failed inside Clean Viewer handler scope:', err);
+            });
+        });
+      }
       doc.body.appendChild(downloadBtn);
     }
   }
@@ -3140,7 +3320,6 @@ visibility: hidden !important;
   ExecutionGuard.setExecuted();
 
   // 1. Instantiate controller immediately at document-start.
-  // The constructor sets up the JSON.parse interceptor (ApiManager).
   const app = new AppController();
 
   // 2. Defer the UI initialization (init()) until the DOM is ready, as UIManager and Sentinel need access to document.body.
