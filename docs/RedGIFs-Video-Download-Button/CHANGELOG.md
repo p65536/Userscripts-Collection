@@ -1,5 +1,10 @@
 # Changelog
 
+## [2.6.1] - 2026-07-14
+- **Core Changes**
+  - [Download] Fixed a critical issue where clicking the download button on subsequent videos in scrolled feeds mistakenly targeted the first video on the page.
+  - [Metadata] Improved author name extraction to stay robust and prevent broken placeholders during future site layout and metadata scheme updates.
+
 ## [2.6.0] - 2026-07-11
 - **Core Changes**
   - Switched tracking engines from network intercept hooks to stable OGP tag extraction to adapt to layout updates (Special thanks to D Duke for the implementation proposal).

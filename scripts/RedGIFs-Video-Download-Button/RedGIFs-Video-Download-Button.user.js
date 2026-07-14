@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         RedGIFs Video Download Button
 // @namespace    https://github.com/p65536
-// @version      2.6.0
+// @version      2.6.1
 // @license      MIT
 // @description  Adds a download button (for one-click HD downloads) and an "Open in New Tab" button to each video on the RedGIFs site.
 // @icon         https://www.redgifs.com/favicon.ico
@@ -1809,8 +1809,23 @@ background-color: #c00;
             const text = script.textContent;
             if (!text) continue;
             const data = JSON.parse(text);
-            if (data.author && data.author.name) userName = data.author.name;
-            else if (data.video && data.video.author) userName = data.video.author;
+            if (data.author && data.author.name) {
+              userName = data.author.name;
+            } else if (data.video && data.video.author) {
+              const authorData = data.video.author;
+              // Guard to handle both string and object structures in video.author for future site updates
+              if (typeof authorData === 'string') {
+                userName = authorData;
+              } else if (authorData && typeof authorData === 'object') {
+                if (authorData.name) {
+                  userName = authorData.name;
+                  // Log to console if site layout changes to object structure
+                  Logger.info('SITE CHANGED', LOG_STYLES.BLUE, 'Detected object structure in video.author. Extracted name:', userName);
+                } else {
+                  Logger.warn('SITE CHANGED', LOG_STYLES.YELLOW, 'Unexpected object structure in video.author:', authorData);
+                }
+              }
+            }
             if (userName) break;
           } catch (e) {}
         }
@@ -1858,6 +1873,13 @@ background-color: #c00;
      */
     _extractFromCurrentPage(mediaId) {
       try {
+        // Verify if the requested mediaId matches the current page's actual URL to support infinite scroll
+        const pathParts = window.location.pathname.split('/');
+        const currentPathId = pathParts[2]?.toLowerCase();
+        if (currentPathId !== mediaId.toLowerCase()) {
+          return null;
+        }
+
         // Detect media type: if og:type is "image", treat as image
         const ogType = document.querySelector('meta[property="og:type"]');
         const isImage = ogType && ogType.getAttribute('content') === 'image';
@@ -1866,7 +1888,6 @@ background-color: #c00;
         if (isImage) {
           // Look for the image element on the page (the displayed image)
           const imgEl = document.querySelector('.ImageGif-Thumbnail');
-
           // Verify element type before accessing properties
           if (imgEl instanceof HTMLImageElement && imgEl.src) {
             let hdUrl = imgEl.src;
@@ -1923,7 +1944,6 @@ background-color: #c00;
 
         // For videos: first try to get the video element's src if it's not a blob
         const videoEl = document.querySelector('video[src]');
-
         // Verify element type before accessing properties
         if (videoEl instanceof HTMLVideoElement) {
           const src = videoEl.src || videoEl.currentSrc;
