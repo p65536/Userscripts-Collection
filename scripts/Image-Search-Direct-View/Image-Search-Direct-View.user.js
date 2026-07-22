@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         Image-Search-Direct-View
 // @namespace    https://github.com/p65536
-// @version      1.2.1
+// @version      1.3.0
 // @license      MIT
 // @description  Adds a "View Image" button to Image Search results on [Bing/DuckDuckGo/Google].
 // @icon         data:image/svg+xml;utf8,%3Csvg xmlns='http://www.w3.org/2000/svg' height='24px' viewBox='0 -960 960 960' width='24px' fill='%235985E1'%3E%3Cpath d='M240-280h480L597-444q-11-2-22.5-5t-22.5-7L450-320l-90-120-120 160Zm-40 160q-33 0-56.5-23.5T120-200v-560q0-33 23.5-56.5T200-840h200v80H200v560h560v-213l80 80v133q0 33-23.5 56.5T760-120H200Zm280-360Zm382 56L738-548q-21 14-45 21t-51 7q-74 0-126-52.5T464-700q0-75 52.5-127.5T644-880q75 0 127.5 52.5T824-700q0 27-8 52t-20 46l122 122-56 56ZM644-600q42 0 71-29t29-71q0-42-29-71t-71-29q-42 0-71 29t-29 71q0 42 29 71t71 29Z'/%3E%3C/svg%3E
@@ -3502,6 +3502,14 @@ max-height: 95vh;
     constructor(uiManager) {
       super(uiManager);
       this.uiManager.setUrlFetcher((element) => this.extractUrls(element));
+
+      // Stores recent /imgres metadata captured on thumbnail click
+      this._lastImgresData = null;
+      this._lastThumbClickAt = 0;
+      this._lastLoggedPanelUrl = null;
+      this._lastLoggedPanelMode = null;
+
+      this._setupPanelSupport();
     }
 
     static get id() {
@@ -3530,25 +3538,69 @@ max-height: 95vh;
     }
 
     /**
+     * Sets up event listeners to capture /imgres data when thumbnails are clicked.
+     * @private
+     */
+    _setupPanelSupport() {
+      const onThumbClick = (e) => {
+        const target = e.target;
+        const link = target && typeof target.closest === 'function' ? target.closest('a[href*="/imgres"]') : null;
+        if (link) {
+          const data = this._parseImgresLink(link.href);
+          if (data) {
+            const img = link.querySelector('img');
+            data.thumbnailUrl = img ? img.getAttribute('data-src') || img.getAttribute('src') : null;
+            this._lastImgresData = data;
+          }
+        }
+        this._lastThumbClickAt = Date.now();
+      };
+
+      document.addEventListener('click', onThumbClick, true);
+      this.addDisposable(() => document.removeEventListener('click', onThumbClick, true));
+    }
+
+    /**
+     * Parses an /imgres link URL into imageUrl and hostUrl.
+     * @private
+     * @param {string} href
+     * @returns {{imageUrl: string|null, hostUrl: string|null, thumbnailUrl: string|null}|null}
+     */
+    _parseImgresLink(href) {
+      try {
+        const params = new URLSearchParams(new URL(href).search);
+        const imageUrl = params.get('imgurl');
+        const hostUrl = params.get('imgrefurl');
+        if (!imageUrl && !hostUrl) return null;
+        return { imageUrl, hostUrl, thumbnailUrl: null };
+      } catch (e) {
+        return null;
+      }
+    }
+
+    /**
      * Returns the CSS selector for the sentinel element.
-     * Targets the anchor tags with /imgres (New Layout) first, then falls back to the container with 'data-docid' (Old Layout).
+     * Targets grid items (/imgres, data-docid) as well as preview panel main image links.
      * @returns {string}
      */
     getSentinelSelector() {
-      return 'a[href*="/imgres"], div[data-lpage][data-docid]';
+      return 'a[href*="/imgres"], div[data-lpage][data-docid], [data-viewer-type] a[role="link"], [data-lhcontainer] a[role="link"], div[data-sci][aria-hidden="false"] a[role="link"]';
     }
 
     /**
      * Called when a new result element is detected.
-     * Finds the anchor tag and the appropriate container to inject buttons.
+     * Finds the anchor tag and container, while allowing main preview image links and related cards inside the panel.
      * @param {HTMLElement} element - The detected sentinel element.
      */
     onResultFound(element) {
-      // Check if the element is inside the detailed viewer panel.
-      // Google displays similar images inside the side panel, which causes duplication.
-      // We use 'data-lhcontainer' or 'data-viewer-type' which are characteristic of the viewer structure.
-      const isInsidePanel = element.closest('[data-lhcontainer], [data-viewer-type]');
-      if (isInsidePanel) {
+      const panel = element.closest('[data-lhcontainer], [data-viewer-type], div[data-sci][aria-hidden="false"]');
+
+      // Identify if the element is the main preview image link or a related image card inside the panel
+      const isMainPreview = panel && element.tagName === 'A' && element.getAttribute('role') === 'link' && !element.href.includes('/imgres') && !!element.querySelector('img');
+      const isRelatedImage = panel && !isMainPreview && (element.matches('a[href*="/imgres"]') || element.matches('div[data-lpage][data-docid]'));
+
+      // Skip elements inside the panel that are neither main preview nor related cards
+      if (panel && !isMainPreview && !isRelatedImage) {
         return;
       }
 
@@ -3568,12 +3620,13 @@ max-height: 95vh;
     }
 
     /**
-     * Extracts URLs from a Google result element.
+     * Extracts URLs from a Google result element or preview panel image.
      *
      * Strategy:
-     * 1. **Image URL**: Checks for 'imgurl' parameter in /imgres links (New Structure) or returns null (Old Structure).
-     * 2. **Host URL**: Extracted from 'imgrefurl' parameter or 'data-lpage' attribute.
-     * 3. **Thumbnail URL**: Extracted from the `img` tag inside the card.
+     * 1. **Preview Panel Image**: Uses recent /imgres params if available (logged in GREEN), otherwise falls back to DOM img src (logged in ORANGE).
+     * 2. **Grid Image URL**: Checks for 'imgurl' parameter in /imgres links (New Structure) or returns null (Old Structure).
+     * 3. **Host URL**: Extracted from 'imgrefurl' parameter or 'data-lpage' attribute.
+     * 4. **Thumbnail URL**: Extracted from the `img` tag inside the card.
      *
      * @param {HTMLElement} element - The sentinel element.
      * @returns {{imageUrl: string|null, hostUrl: string|null, hostUrlSource: string|null, thumbnailUrl: string|null}}
@@ -3583,6 +3636,51 @@ max-height: 95vh;
       let hostUrl = null;
       let hostUrlSource = null;
       let thumbnailUrl = null;
+
+      // Handle extraction for the main preview image inside the detailed panel
+      const panel = element.closest('[data-lhcontainer], [data-viewer-type], div[data-sci][aria-hidden="false"]');
+      const isMainPreview = panel && element.tagName === 'A' && element.getAttribute('role') === 'link' && !element.href.includes('/imgres');
+
+      if (isMainPreview) {
+        const captured = this._lastImgresData;
+
+        if (captured && captured.imageUrl) {
+          // Primary Path: Extracted from /imgres params
+          imageUrl = captured.imageUrl;
+          hostUrl = captured.hostUrl || element.href;
+          hostUrlSource = 'IMGRES-PARAM';
+          thumbnailUrl = captured.thumbnailUrl;
+
+          // Log only when URL or mode changes to prevent hover spam
+          if (this._lastLoggedPanelUrl !== imageUrl || this._lastLoggedPanelMode !== 'IMGRES') {
+            this._lastLoggedPanelUrl = imageUrl;
+            this._lastLoggedPanelMode = 'IMGRES';
+            Logger.info('PANEL URL [IMGRES]', LOG_STYLES.GREEN, `Image: ${imageUrl}`);
+          }
+        } else {
+          // Fallback Path: Directly extracted from DOM img element
+          hostUrl = element.href;
+          hostUrlSource = 'PREVIEW-LINK';
+
+          const imgEl = element.querySelector('img');
+          if (imgEl) {
+            const src = imgEl.getAttribute('data-src') || imgEl.getAttribute('src');
+            if (src && !/encrypted-tbn|gstatic\.com|favicon/.test(src)) {
+              imageUrl = src;
+            }
+            thumbnailUrl = src;
+          }
+
+          // Log only when URL or mode changes to prevent hover spam
+          if (this._lastLoggedPanelUrl !== imageUrl || this._lastLoggedPanelMode !== 'FALLBACK') {
+            this._lastLoggedPanelUrl = imageUrl;
+            this._lastLoggedPanelMode = 'FALLBACK';
+            Logger.warn('PANEL URL [FALLBACK]', LOG_STYLES.ORANGE, `Fallback Image: ${imageUrl || '(none)'}`);
+          }
+        }
+
+        return { imageUrl, hostUrl, hostUrlSource, thumbnailUrl };
+      }
 
       // Try extraction from /imgres URL parameters (New Structure: 2026-02-08)
       let linkHref = null;
@@ -3632,6 +3730,7 @@ max-height: 95vh;
      * Asynchronously fetches the original image URL by interacting with the detailed panel.
      *
      * Flow:
+     * 0. [Preview Panel] Returns the extracted imageUrl immediately for main preview elements.
      * 1. [New Structure] Checks for /imgres links and extracts URL params immediately.
      * 2. [Old Structure] Checks for 'data-docid' and triggers side panel interaction.
      * 3. [Fallback] Returns null if neither structure is matched.
@@ -3640,6 +3739,15 @@ max-height: 95vh;
      * @returns {Promise<string|null>} The original image URL or null.
      */
     async fetchOriginalImageUrl(element) {
+      // If the element is the main preview link inside panel, return its image URL immediately
+      const panel = element.closest('[data-lhcontainer], [data-viewer-type], div[data-sci][aria-hidden="false"]');
+      const isMainPreview = panel && element.tagName === 'A' && element.getAttribute('role') === 'link' && !element.href.includes('/imgres');
+
+      if (isMainPreview) {
+        const urls = this.extractUrls(element);
+        return urls.imageUrl;
+      }
+
       // 1. New Structure Strategy: Anchor tag with /imgres
       if (element.tagName === 'A' && element.href.includes('/imgres')) {
         try {
@@ -3701,7 +3809,6 @@ max-height: 95vh;
           // Strategy: Find the close button by its specific SVG path content
           // This is robust against class name/jsname changes.
           const closeIconPath = 'M19 6.41L17.59 5 12 10.59 6.41 5 5 6.41 10.59 12 5 17.59 6.41 19 12 13.41 17.59 19 19 17.59 13.41 12z';
-
           // Search for path elements within the panel
           const paths = panel.querySelectorAll('svg path');
           let closeBtn = null;
@@ -3732,7 +3839,7 @@ max-height: 95vh;
             const activeContainer = panel.closest('div[data-sci][aria-hidden="false"]');
             if (!activeContainer) return;
 
-            // Find the image linked to the Landing Page (lpage)
+            // 2. Find the target image linked to the Landing Page (lpage)
             let targetImg = null;
 
             if (lpage) {
@@ -3751,7 +3858,6 @@ max-height: 95vh;
               // 3. Check if src is a high-quality URL.
               // We filter out known thumbnail/preview domains to wait for the original image.
               const isLowRes = /encrypted-tbn|gstatic\.com|favicon/.test(targetImg.src);
-
               if (targetImg.src.startsWith('http') && !isLowRes) {
                 finalize();
                 closePanel(panel);

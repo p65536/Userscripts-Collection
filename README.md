@@ -12,14 +12,14 @@ A collection of simple, single-purpose userscripts for various websites.
 
 ## Recent Updates
 
+### 2026-07-22
+- Updated `Image Search Direct View` (v1.2.1 -> v1.3.0)  
+
 ### 2026-06-30
 - Updated `Image Search Direct View` (v1.2.0 -> v1.2.1)  
 
 ### 2026-06-29
 - Updated `Image Search Direct View` (v1.1.1 -> v1.2.0)  
-
-### 2026-03-14
-- Updated `YouTube UI Customizer` (v1.3.1 -> v1.3.2)  
 
 ---
 
@@ -73,7 +73,7 @@ as this kind of expectation discourages further maintenance.**
 
 | Platform | GitHub | Greasy Fork | Version | Last Updated | Changelog |
 | :--- | :--- | :--- | :--- | :--- | :--- |
-| **Bing**<br>**DuckDuckGo**<br>**Google** | [![Download](https://img.shields.io/badge/Download-blue?style=flat-square&logo=download)](https://raw.githubusercontent.com/p65536/Userscripts-Collection/main/scripts/Image-Search-Direct-View/Image-Search-Direct-View.user.js) | [![Greasy Fork](https://img.shields.io/badge/Install-green?style=flat-square&logo=greasyfork)](https://greasyfork.org/en/scripts/561330-image-search-direct-view) | 1.2.1 | 2026-06-30 | [View](./docs/Image-Search-Direct-View/CHANGELOG.md) |
+| **Bing**<br>**DuckDuckGo**<br>**Google** | [![Download](https://img.shields.io/badge/Download-blue?style=flat-square&logo=download)](https://raw.githubusercontent.com/p65536/Userscripts-Collection/main/scripts/Image-Search-Direct-View/Image-Search-Direct-View.user.js) | [![Greasy Fork](https://img.shields.io/badge/Install-green?style=flat-square&logo=greasyfork)](https://greasyfork.org/en/scripts/561330-image-search-direct-view) | 1.3.0 | 2026-07-22 | [View](./docs/Image-Search-Direct-View/CHANGELOG.md) |
 
 <details>
   <summary>Getting Started (Click to expand)</summary>

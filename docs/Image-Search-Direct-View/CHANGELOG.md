@@ -1,5 +1,10 @@
 # Changelog
 
+## [1.3.0] - 2026-07-22
+- **Core Changes**
+  - [Google] Added direct action buttons to the main preview image inside Google Images' side detail panel.
+  - [Bing/DDG] Omitted preview panel button injection for Bing and DuckDuckGo, as both search engines already feature native controls to view images and visit source pages.
+
 ## [1.2.1] - 2026-06-30
 - **Core Changes**
   - [Icon] Embedded the script icon as an inline Data URI to guarantee asset rendering and eliminate external network dependencies.
