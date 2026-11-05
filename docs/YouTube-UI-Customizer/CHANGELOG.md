@@ -1,5 +1,9 @@
 # Changelog
 
+## [1.3.3] - 2026-11-05
+- **Maintenance**
+  - Updated type annotations and standardized source formatting. No functional changes.
+
 ## [1.3.2] - 2026-03-14
 - **Bug Fixes**
   - Fixed an issue where the layout would break on list-based pages (like Watch History), causing UI elements such as action menus ("...") to overlap and become unclickable. The custom grid width expansion is now correctly limited only to pages with a video grid.
