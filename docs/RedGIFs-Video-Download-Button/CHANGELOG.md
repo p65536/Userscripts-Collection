@@ -1,5 +1,9 @@
 # Changelog
 
+## [2.6.3] - 2026-11-05
+- **Maintenance**
+  - Updated type annotations and cleaned up internal code. No functional changes.
+
 ## [2.6.2] - 2026-08-09
 - **Core Changes**
   - [Metadata] Temporarily worked around missing filename dates caused by corrupted date-time strings from RedGIFs servers (e.g., `%2026-%08-%08UTC%21:%Aug:%th.0000`). Restored dates now fall back to `YYYYMMDD_000000` with the time fixed to `000000`.

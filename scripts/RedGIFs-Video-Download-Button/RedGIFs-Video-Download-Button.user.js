@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         RedGIFs Video Download Button
 // @namespace    https://github.com/p65536
-// @version      2.6.2
+// @version      2.6.3
 // @license      MIT
 // @description  Adds a download button (for one-click HD downloads) and an "Open in New Tab" button to each video on the RedGIFs site.
 // @icon         https://www.redgifs.com/favicon.ico
@@ -891,8 +891,11 @@ background-color: #c00;
   }
 
   /**
+   * @typedef {{tag: string, props?: Record<string, unknown>, children?: IconDefinition[]}} IconDefinition
+   */
+  /**
    * Recursively builds a DOM element from a definition object using the h() function.
-   * @param {object} def The definition object for the element.
+   * @param {IconDefinition} def The definition object for the element.
    * @returns {HTMLElement | SVGElement | null} The created DOM element.
    */
   function createIconFromDef(def) {
@@ -1294,7 +1297,7 @@ background-color: #c00;
     /**
      * Processes and sanitizes an entire configuration object.
      * @param {object|null} userConfig The user configuration object (partial or full).
-     * @returns {object} The complete, sanitized configuration object.
+     * @returns {typeof DEFAULT_CONFIG} The complete, sanitized configuration object.
      */
     process(userConfig) {
       // 1. Start with a deep copy of the defaults.
@@ -1311,7 +1314,7 @@ background-color: #c00;
 
   class ConfigManager {
     constructor() {
-      /** @type {object|null} */
+      /** @type {typeof DEFAULT_CONFIG|null} */
       this.config = null;
     }
 
@@ -1354,7 +1357,7 @@ background-color: #c00;
     }
 
     /**
-     * @returns {object} The current configuration object.
+     * @returns {typeof DEFAULT_CONFIG} The current configuration object.
      */
     get() {
       return this.config ?? deepClone(DEFAULT_CONFIG);
@@ -1827,7 +1830,9 @@ background-color: #c00;
               }
             }
             if (userName) break;
-          } catch (e) {}
+          } catch {
+            // Ignore malformed JSON-LD and try the next metadata block.
+          }
         }
       }
 
@@ -1872,7 +1877,9 @@ background-color: #c00;
             createDate = parseDateString(data.datePublished);
           }
           if (createDate) break;
-        } catch (e) {}
+        } catch {
+          // Ignore malformed JSON-LD and try the next metadata block.
+        }
       }
 
       return { userName, tags, createDate };
@@ -2015,7 +2022,7 @@ background-color: #c00;
     /**
      * Handles the download process, managing states and notifications via callbacks.
      * @param {string} mediaId
-     * @param {object} mediaInfo
+     * @param {Awaited<ReturnType<MediaInfoManager['getMediaInfo']>>} mediaInfo
      * @param {object} callbacks
      * @param {Function} callbacks.onStatusChange - Callback to update UI button state
      * @param {Function} callbacks.onNotify - Callback to display toast notifications
@@ -2283,7 +2290,7 @@ pointer-events: auto !important;
     /**
      * Updates the visual state (icon and title) of all buttons matching the selector.
      * @param {string} selector - The CSS selector for the buttons.
-     * @param {keyof ICONS} iconName - The new icon name.
+     * @param {keyof typeof ICONS} iconName - The new icon name.
      * @param {string} title - The new tooltip title.
      */
     updateButtonVisuals(selector, iconName, title) {
@@ -2938,7 +2945,7 @@ visibility: hidden !important;
    * @typedef {object} ButtonConfig
    * @property {string} className - The CSS class for the button.
    * @property {string} title - The button's tooltip text.
-   * @property {keyof ICONS} iconName - The key of the icon in the ICONS object.
+   * @property {keyof typeof ICONS} iconName - The key of the icon in the ICONS object.
    */
   class AppController {
     constructor() {
@@ -3126,7 +3133,7 @@ visibility: hidden !important;
 
     /**
      * Handles configuration updates to refresh UI components.
-     * @param {object} config The new configuration object.
+     * @param {typeof DEFAULT_CONFIG} config The new configuration object.
      * @private
      */
     _handleConfigUpdate(config) {
@@ -3184,7 +3191,7 @@ visibility: hidden !important;
     /**
      * Opens the media in a clean, minimalist viewer in a new tab.
      * For videos, it uses <video>; for images, it shows the image directly.
-     * @param {object} mediaInfo - The cached media info.
+     * @param {Awaited<ReturnType<MediaInfoManager['getMediaInfo']>>} mediaInfo - The cached media info.
      * @param {string} mediaId - The media ID.
      * @private
      */
@@ -3217,7 +3224,7 @@ visibility: hidden !important;
         // Auto-heal missing head/body (common in about:blank)
         if (!doc.head) doc.documentElement.appendChild(h('head'));
         if (!doc.body) doc.documentElement.appendChild(h('body'));
-      } catch (e) {
+      } catch {
         // Fallback: Navigate the blank window to the standard watch page
         newWindow.location.href = watchUrl;
         return;
