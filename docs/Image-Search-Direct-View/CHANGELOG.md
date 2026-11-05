@@ -1,5 +1,13 @@
 # Changelog
 
+## [1.3.1] - 2026-11-05
+- **Bug Fixes**
+  - [Settings] Prevented partial configuration changes when required settings controls are missing or invalid.
+  - [Buttons] Added safeguards for unexpected page elements during button setup and image actions.
+- **Maintenance**
+  - Preserved additional image decoding error details for troubleshooting.
+  - Internal code cleanup and consistent source formatting.
+
 ## [1.3.0] - 2026-07-22
 - **Core Changes**
   - [Google] Added direct action buttons to the main preview image inside Google Images' side detail panel.

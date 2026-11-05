@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         Image-Search-Direct-View
 // @namespace    https://github.com/p65536
-// @version      1.3.0
+// @version      1.3.1
 // @license      MIT
 // @description  Adds a "View Image" button to Image Search results on [Bing/DuckDuckGo/Google].
 // @icon         data:image/svg+xml;utf8,%3Csvg xmlns='http://www.w3.org/2000/svg' height='24px' viewBox='0 -960 960 960' width='24px' fill='%235985E1'%3E%3Cpath d='M240-280h480L597-444q-11-2-22.5-5t-22.5-7L450-320l-90-120-120 160Zm-40 160q-33 0-56.5-23.5T120-200v-560q0-33 23.5-56.5T200-840h200v80H200v560h560v-213l80 80v133q0 33-23.5 56.5T760-120H200Zm280-360Zm382 56L738-548q-21 14-45 21t-51 7q-74 0-126-52.5T464-700q0-75 52.5-127.5T644-880q75 0 127.5 52.5T824-700q0 27-8 52t-20 46l122 122-56 56ZM644-600q42 0 71-29t29-71q0-42-29-71t-71-29q-42 0-71 29t-29 71q0 42 29 71t71 29Z'/%3E%3C/svg%3E
@@ -706,9 +706,10 @@ pointer-events: auto;
    * Keys present in 'source' but missing in 'target' are ignored.
    * The 'target' object acts as a schema; it must contain all valid keys.
    *
-   * @param {object} target The target object (e.g., a deep copy of default config).
+   * @template T
+   * @param {T & object} target The target object (e.g., a deep copy of default config).
    * @param {object} source The source object (e.g., user config).
-   * @returns {object} The mutated target object.
+   * @returns {T} The mutated target object.
    */
   function resolveConfig(target, source) {
     for (const [key, sourceVal] of Object.entries(source)) {
@@ -855,8 +856,11 @@ pointer-events: auto;
   }
 
   /**
+   * @typedef {{tag: string, props?: Record<string, unknown>, children?: IconDefinition[]}} IconDefinition
+   */
+  /**
    * Recursively builds a DOM element from a definition object using the h() function.
-   * @param {object} def The definition object for the element.
+   * @param {IconDefinition} def The definition object for the element.
    * @returns {HTMLElement | SVGElement | null} The created DOM element.
    */
   function createIconFromDef(def) {
@@ -1602,7 +1606,7 @@ pointer-events: auto;
         const retryInput = document.getElementById(`${APPID}-input-retry`);
         const retryDesc = document.getElementById(`${APPID}-retry-desc`);
 
-        if (!retryWrapper || !retryInput) return;
+        if (!retryWrapper || !(retryInput instanceof HTMLInputElement)) return;
 
         const isDisabled = strategy === CONSTANTS.FETCH_STRATEGY.DIRECT;
         const opacity = isDisabled ? '0.5' : '1';
@@ -1818,15 +1822,31 @@ pointer-events: auto;
      * Saves the current settings from the form.
      */
     async save() {
-      const newConfig = this.configManager.get();
+      const hoverInput = document.getElementById(`${APPID}-input-hover`);
+      const pageButtonInput = document.getElementById(`${APPID}-input-page-btn`);
+      const strategyInput = document.getElementById(`${APPID}-input-strategy`);
+      const referrerInput = document.getElementById(`${APPID}-input-referrer`);
+      const retryInput = document.getElementById(`${APPID}-input-retry`);
+      const revokeTimeInput = document.getElementById(`${APPID}-input-revoke-time`);
 
+      if (
+        !(hoverInput instanceof HTMLInputElement) ||
+        !(pageButtonInput instanceof HTMLInputElement) ||
+        !(strategyInput instanceof HTMLSelectElement) ||
+        !(referrerInput instanceof HTMLSelectElement) ||
+        !(retryInput instanceof HTMLInputElement) ||
+        !(revokeTimeInput instanceof HTMLSelectElement)
+      )
+        return;
+
+      const newConfig = this.configManager.get();
       // Collect values from DOM
-      newConfig.common.showOnlyOnHover = document.getElementById(`${APPID}-input-hover`).checked;
-      newConfig.common.showVisitPageButton = document.getElementById(`${APPID}-input-page-btn`).checked;
-      newConfig.common.fetchStrategy = document.getElementById(`${APPID}-input-strategy`).value;
-      newConfig.common.referrerPolicy = document.getElementById(`${APPID}-input-referrer`).value;
-      newConfig.common.retryOnFailure = document.getElementById(`${APPID}-input-retry`).checked;
-      newConfig.common.blobRevokeTimeout = Number(document.getElementById(`${APPID}-input-revoke-time`).value);
+      newConfig.common.showOnlyOnHover = hoverInput.checked;
+      newConfig.common.showVisitPageButton = pageButtonInput.checked;
+      newConfig.common.fetchStrategy = strategyInput.value;
+      newConfig.common.referrerPolicy = referrerInput.value;
+      newConfig.common.retryOnFailure = retryInput.checked;
+      newConfig.common.blobRevokeTimeout = Number(revokeTimeInput.value);
 
       await this.configManager.save(newConfig);
       this.close();
@@ -1838,24 +1858,32 @@ pointer-events: auto;
      */
     _restoreDefaults() {
       // Restore Checkboxes
-      document.getElementById(`${APPID}-input-hover`).checked = DEFAULT_CONFIG.common.showOnlyOnHover;
-      document.getElementById(`${APPID}-input-page-btn`).checked = DEFAULT_CONFIG.common.showVisitPageButton;
+      const hoverInput = document.getElementById(`${APPID}-input-hover`);
+      if (hoverInput instanceof HTMLInputElement) hoverInput.checked = DEFAULT_CONFIG.common.showOnlyOnHover;
+      const pageButtonInput = document.getElementById(`${APPID}-input-page-btn`);
+      if (pageButtonInput instanceof HTMLInputElement) pageButtonInput.checked = DEFAULT_CONFIG.common.showVisitPageButton;
 
       // Strategy (Triggers Retry state update via change event)
       const strategyInput = document.getElementById(`${APPID}-input-strategy`);
-      strategyInput.value = DEFAULT_CONFIG.common.fetchStrategy;
-      strategyInput.dispatchEvent(new Event('change'));
+      if (strategyInput instanceof HTMLSelectElement) {
+        strategyInput.value = DEFAULT_CONFIG.common.fetchStrategy;
+        strategyInput.dispatchEvent(new Event('change'));
+      }
 
       // Referrer (Triggers description update)
       const referrerInput = document.getElementById(`${APPID}-input-referrer`);
-      referrerInput.value = DEFAULT_CONFIG.common.referrerPolicy;
-      referrerInput.dispatchEvent(new Event('change'));
+      if (referrerInput instanceof HTMLSelectElement) {
+        referrerInput.value = DEFAULT_CONFIG.common.referrerPolicy;
+        referrerInput.dispatchEvent(new Event('change'));
+      }
 
       // Retry
-      document.getElementById(`${APPID}-input-retry`).checked = DEFAULT_CONFIG.common.retryOnFailure;
+      const retryInput = document.getElementById(`${APPID}-input-retry`);
+      if (retryInput instanceof HTMLInputElement) retryInput.checked = DEFAULT_CONFIG.common.retryOnFailure;
 
       // Advanced
-      document.getElementById(`${APPID}-input-revoke-time`).value = DEFAULT_CONFIG.common.blobRevokeTimeout;
+      const revokeTimeInput = document.getElementById(`${APPID}-input-revoke-time`);
+      if (revokeTimeInput instanceof HTMLSelectElement) revokeTimeInput.value = String(DEFAULT_CONFIG.common.blobRevokeTimeout);
     }
 
     /**
@@ -1998,8 +2026,8 @@ max-height: 95vh;
 
       const style = h('style', { id }, css);
       // Add nonce if available
-      const nonce = document.querySelector('script[nonce]')?.nonce;
-      if (nonce) style.setAttribute('nonce', nonce);
+      const script = document.querySelector('script[nonce]');
+      if (script instanceof HTMLScriptElement && script.nonce) style.setAttribute('nonce', script.nonce);
 
       document.head.appendChild(style);
     }
@@ -2023,9 +2051,7 @@ max-height: 95vh;
 
       /**
        * Stores state associated with button elements without polluting the DOM.
-       * Key: Button Element
-       * Value: { sentinel: HTMLElement, isFetching: boolean, activeBlobUrl: string|null, activeRevokeTimer: number|null, hostSource: string|null }
-       * @type {WeakMap<HTMLElement, object>}
+       * @type {WeakMap<HTMLAnchorElement, {sentinel: HTMLElement, isFetching: boolean, activeBlobUrl: string|null, activeRevokeTimer: number|null, activeThumbnailUrl: string|null, hostSource: string|null}>}
        */
       this.btnState = new WeakMap();
 
@@ -2041,9 +2067,9 @@ max-height: 95vh;
 
     /**
      * Initializes the UI Manager with platform-specific styles.
-     * @param {object} platformStyles - The style configuration for the current platform.
+     * @param {typeof SITE_STYLES[keyof typeof SITE_STYLES]} platformStyles - The style configuration for the current platform.
      */
-    init(platformStyles) {
+    initializeUI(platformStyles) {
       this._injectStyles(platformStyles);
       this.updateStyles();
       this._createToastContainer();
@@ -2094,7 +2120,7 @@ max-height: 95vh;
 
     /**
      * Injects base styles and platform-specific CSS variables.
-     * @param {object} platformStyles
+     * @param {typeof SITE_STYLES[keyof typeof SITE_STYLES]} platformStyles
      */
     _injectStyles(platformStyles) {
       const id = `${APPID}-styles`;
@@ -2122,10 +2148,12 @@ max-height: 95vh;
         return;
       }
 
-      style = h('style', { id }, cssContent);
+      const newStyle = h('style', { id }, cssContent);
+      if (!(newStyle instanceof HTMLStyleElement)) return;
+      style = newStyle;
       // Add nonce if available (CSP fix)
-      const nonce = document.querySelector('script[nonce]')?.nonce;
-      if (nonce) style.setAttribute('nonce', nonce);
+      const script = document.querySelector('script[nonce]');
+      if (script instanceof HTMLScriptElement && script.nonce) style.setAttribute('nonce', script.nonce);
 
       document.head.appendChild(style);
     }
@@ -2143,10 +2171,12 @@ max-height: 95vh;
       // Remove existing dynamic styles to re-apply
       let styleEl = document.getElementById(id);
       if (!styleEl) {
-        styleEl = h('style', { id: id, type: 'text/css' });
+        const newStyle = h('style', { id: id, type: 'text/css' });
+        if (!(newStyle instanceof HTMLStyleElement)) return;
+        styleEl = newStyle;
         // Add nonce if available
-        const nonce = document.querySelector('script[nonce]')?.nonce;
-        if (nonce) styleEl.setAttribute('nonce', nonce);
+        const script = document.querySelector('script[nonce]');
+        if (script instanceof HTMLScriptElement && script.nonce) styleEl.setAttribute('nonce', script.nonce);
         document.head.appendChild(styleEl);
       }
 
@@ -2205,15 +2235,16 @@ max-height: 95vh;
         if (hasImgBtn && hasPageBtn) return;
       }
 
+      // Create buttons from template
+      const imgBtn = this.imageBtnTemplate.cloneNode(true);
+      const pageBtn = this.pageBtnTemplate.cloneNode(true);
+      if (!(imgBtn instanceof HTMLAnchorElement) || !(pageBtn instanceof HTMLAnchorElement)) return;
+
       // Mark the specific element as processed
       sentinelElement.classList.add(processedClass);
 
       // Add the class used for hover effects to the container that holds the button.
       targetContainer.classList.add(`${APPID}-container`);
-
-      // Create buttons from template
-      const imgBtn = this.imageBtnTemplate.cloneNode(true);
-      const pageBtn = this.pageBtnTemplate.cloneNode(true);
 
       // Initialize state in WeakMap
       const initialState = {
@@ -2285,7 +2316,7 @@ max-height: 95vh;
     /**
      * Waits for the URL to be injected by the host site's scripts.
      * Uses MutationObserver to detect changes in the anchor tag's href attribute.
-     * @param {HTMLElement} btn
+     * @param {HTMLAnchorElement} btn
      * @returns {Promise<void>}
      */
     _waitForValidUrl(btn) {
@@ -2593,7 +2624,7 @@ max-height: 95vh;
               }
             }, revokeTime);
             return;
-          } catch (e) {
+          } catch {
             /* ignore thumbnail fail */
           }
         }
@@ -2880,7 +2911,7 @@ max-height: 95vh;
           }
           return new Blob([u8arr], { type: mime });
         } catch (e) {
-          throw new Error(`Base64 decoding failed: ${e.message}`);
+          throw new Error(`Base64 decoding failed: ${e.message}`, { cause: e });
         }
       } else {
         // Non-base64 (URL-encoded) data is not fully implemented yet
@@ -2893,9 +2924,10 @@ max-height: 95vh;
      * Generates headers for GM.xmlHttpRequest based on the referrer policy.
      * @private
      * @param {string} policy
-     * @returns {object} Headers object
+     * @returns {Record<string, string>} Headers object
      */
     static _getHeaders(policy) {
+      /** @type {Record<string, string>} */
       const headers = {};
       switch (policy) {
         case CONSTANTS.REFERRER_POLICY.NO_REFERRER:
@@ -3229,7 +3261,7 @@ max-height: 95vh;
             // Fallback: Use proxy URL if 'u' parameter is missing
             imageUrl = img.src;
           }
-        } catch (e) {
+        } catch {
           // Fallback: Use proxy URL on parse error
           imageUrl = img.src;
         }
@@ -3573,7 +3605,7 @@ max-height: 95vh;
         const hostUrl = params.get('imgrefurl');
         if (!imageUrl && !hostUrl) return null;
         return { imageUrl, hostUrl, thumbnailUrl: null };
-      } catch (e) {
+      } catch {
         return null;
       }
     }
@@ -3596,7 +3628,7 @@ max-height: 95vh;
       const panel = element.closest('[data-lhcontainer], [data-viewer-type], div[data-sci][aria-hidden="false"]');
 
       // Identify if the element is the main preview image link or a related image card inside the panel
-      const isMainPreview = panel && element.tagName === 'A' && element.getAttribute('role') === 'link' && !element.href.includes('/imgres') && !!element.querySelector('img');
+      const isMainPreview = panel && element instanceof HTMLAnchorElement && element.getAttribute('role') === 'link' && !element.href.includes('/imgres') && !!element.querySelector('img');
       const isRelatedImage = panel && !isMainPreview && (element.matches('a[href*="/imgres"]') || element.matches('div[data-lpage][data-docid]'));
 
       // Skip elements inside the panel that are neither main preview nor related cards
@@ -3606,7 +3638,7 @@ max-height: 95vh;
 
       // Support both old (div) and new (a) sentinel structures
       let link = element;
-      if (element.tagName !== 'A') {
+      if (!(element instanceof HTMLAnchorElement)) {
         link = element.querySelector('a');
       }
 
@@ -3639,7 +3671,7 @@ max-height: 95vh;
 
       // Handle extraction for the main preview image inside the detailed panel
       const panel = element.closest('[data-lhcontainer], [data-viewer-type], div[data-sci][aria-hidden="false"]');
-      const isMainPreview = panel && element.tagName === 'A' && element.getAttribute('role') === 'link' && !element.href.includes('/imgres');
+      const isMainPreview = panel && element instanceof HTMLAnchorElement && element.getAttribute('role') === 'link' && !element.href.includes('/imgres');
 
       if (isMainPreview) {
         const captured = this._lastImgresData;
@@ -3684,7 +3716,7 @@ max-height: 95vh;
 
       // Try extraction from /imgres URL parameters (New Structure: 2026-02-08)
       let linkHref = null;
-      if (element.tagName === 'A') {
+      if (element instanceof HTMLAnchorElement) {
         linkHref = element.href;
       } else {
         const link = element.querySelector('a');
@@ -3702,7 +3734,7 @@ max-height: 95vh;
             hostUrl = params.get('imgrefurl');
             hostUrlSource = 'URL-PARAM';
           }
-        } catch (e) {
+        } catch {
           // Ignore parse errors
         }
       }
@@ -3741,7 +3773,7 @@ max-height: 95vh;
     async fetchOriginalImageUrl(element) {
       // If the element is the main preview link inside panel, return its image URL immediately
       const panel = element.closest('[data-lhcontainer], [data-viewer-type], div[data-sci][aria-hidden="false"]');
-      const isMainPreview = panel && element.tagName === 'A' && element.getAttribute('role') === 'link' && !element.href.includes('/imgres');
+      const isMainPreview = panel && element instanceof HTMLAnchorElement && element.getAttribute('role') === 'link' && !element.href.includes('/imgres');
 
       if (isMainPreview) {
         const urls = this.extractUrls(element);
@@ -3749,11 +3781,11 @@ max-height: 95vh;
       }
 
       // 1. New Structure Strategy: Anchor tag with /imgres
-      if (element.tagName === 'A' && element.href.includes('/imgres')) {
+      if (element instanceof HTMLAnchorElement && element.href.includes('/imgres')) {
         try {
           const params = new URLSearchParams(new URL(element.href).search);
           return params.get('imgurl');
-        } catch (e) {
+        } catch {
           return null;
         }
       }
@@ -3773,7 +3805,7 @@ max-height: 95vh;
 
         // Identify the trigger button (div[role="button"]) inside the sentinel
         const trigger = element.querySelector('div[role="button"]');
-        if (!trigger) {
+        if (!(trigger instanceof HTMLDivElement)) {
           Logger.warn('ASYNC_FAIL', '', 'Google: Trigger button missing.');
           resolve(null);
           return;
@@ -3781,8 +3813,8 @@ max-height: 95vh;
 
         // Inject Stealth Styles (Hide the detailed panel container by data-id)
         const stealthStyle = document.createElement('style');
-        const nonce = document.querySelector('script[nonce]')?.nonce;
-        if (nonce) stealthStyle.setAttribute('nonce', nonce);
+        const script = document.querySelector('script[nonce]');
+        if (script instanceof HTMLScriptElement && script.nonce) stealthStyle.setAttribute('nonce', script.nonce);
         stealthStyle.textContent = `
                     div[data-id="${docId}"] {
                         opacity: 0 !important;
@@ -3852,7 +3884,7 @@ max-height: 95vh;
               targetImg = panel.querySelector('a[role="link"] > img');
             }
 
-            if (targetImg && targetImg.src) {
+            if (targetImg instanceof HTMLImageElement && targetImg.src) {
               lastKnownSrc = targetImg.src; // Update candidate
 
               // 3. Check if src is a high-quality URL.
@@ -4468,7 +4500,7 @@ max-height: 95vh;
       this.adapter = null;
       /** @type {string|null} */
       this.activeSentinelSelector = null;
-      /** @type {Function|null} */
+      /** @type {((element: Element) => void)|null} */
       this.boundResultHandler = null;
     }
 
@@ -4509,7 +4541,7 @@ max-height: 95vh;
 
       // Check if current adapter is still applicable
       if (this.adapter) {
-        if (this.adapter.constructor.isApplicable()) {
+        if (/** @type {typeof BaseAdapter} */ (this.adapter.constructor).isApplicable()) {
           Logger.debug('DEBUG', '', 'Current adapter is still applicable. Forcing rescan for content updates.');
           this._forceRescan();
           return;
@@ -4550,7 +4582,7 @@ max-height: 95vh;
       Logger.debug('DEBUG', '', `Manual rescan found ${targets.length} candidates.`);
 
       targets.forEach((el) => {
-        this.adapter.onResultFound(el);
+        if (el instanceof HTMLElement) this.adapter.onResultFound(el);
       });
     }
 
@@ -4567,13 +4599,13 @@ max-height: 95vh;
         const style = document.createElement('style');
         style.id = `${APPID}-platform-overrides`;
         style.textContent = platformStyles.overrides;
-        const nonce = document.querySelector('script[nonce]')?.nonce;
-        if (nonce) style.setAttribute('nonce', nonce);
+        const script = document.querySelector('script[nonce]');
+        if (script instanceof HTMLScriptElement && script.nonce) style.setAttribute('nonce', script.nonce);
         document.head.appendChild(style);
       }
 
       // Initialize UI Manager with platform styles
-      this.uiManager.init(platformStyles);
+      this.uiManager.initializeUI(platformStyles);
 
       // Instantiate Adapter using factory manager
       this.adapter = this.manageFactory(CONSTANTS.RESOURCE_KEYS.ADAPTER, () => new AdapterClass(this.uiManager));
@@ -4594,7 +4626,7 @@ max-height: 95vh;
         this.activeSentinelSelector = selector;
         // Bind handler to maintain "this" context and allow removal
         this.boundResultHandler = (el) => {
-          if (this.adapter) {
+          if (this.adapter && el instanceof HTMLElement) {
             this.adapter.onResultFound(el);
 
             // Smoke Test: Validate extraction on the first result found.
@@ -4643,7 +4675,7 @@ max-height: 95vh;
       // Determine styles: use active adapter's styles or fallback to Google's (as generic dark theme)
       let styles = SITE_STYLES.google;
       if (this.adapter) {
-        styles = SITE_STYLES[this.adapter.constructor.id];
+        styles = SITE_STYLES[/** @type {typeof BaseAdapter} */ (this.adapter.constructor).id];
       }
 
       // Manage settings modal instance via factory manager
